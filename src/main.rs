@@ -7,7 +7,7 @@ mod utils;
 use crate::aoe::aoe2;
 use crate::steam::steam_aoe2_path;
 use crate::utils::desktop_dir;
-use anyhow::{Result, bail};
+use anyhow::Result;
 use config::Config;
 use eframe::egui::{self, Ui};
 use fs_extra::copy_items;
@@ -77,9 +77,15 @@ fn draw_main(app: &mut App, ui: &mut Ui) {
         }
 
         if ui.button("Install companion").clicked() {
-            if let Err(err) = aoe2::install_launcher_companion(app.context()) {
+            if let Err(err) = aoe2::companion::install_launcher_companion(app.context()) {
                 dbg!(err);
             };
+        }
+
+        if ui.button("Install launcher").clicked() {
+            if let Err(err) = aoe2::launcher::install_launcher(app.context()) {
+                dbg!(err);
+            }
         }
 
         if let AppState::Working(desc) = &app.state {

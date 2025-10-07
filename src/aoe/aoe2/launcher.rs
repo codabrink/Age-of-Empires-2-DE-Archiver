@@ -1,0 +1,46 @@
+use crate::{
+    Context,
+    aoe::aoe2::launcher,
+    utils::{extract_zip, gh_latest_release_dl_url},
+};
+use anyhow::{Result, bail};
+use serde_json::Value;
+use std::fs;
+
+pub fn install_launcher(ctx: Context) -> Result<()> {
+    let Some(launcher_url) = launcher_full_url(&ctx)? else {
+        bail!("Unable to find latest launcher release.");
+    };
+    ctx.working_on("Downloading launcher.");
+
+    let launcher_zip = reqwest::blocking::get(launcher_url)?.bytes()?.to_vec();
+    let outdir = ctx.outdir()?;
+
+    ctx.working_on("Extracting launcher.");
+
+    for (name, file) in extract_zip(&launcher_zip)? {
+        let mut outpath = outdir.clone();
+        name.split("/").for_each(|c| outpath = outpath.join(c));
+
+        dbg!("outpath", &outpath);
+
+        if let Some(parent) = outpath.parent() {
+            dbg!("parent", parent);
+            if !parent.exists() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+        fs::write(outpath, file)?;
+    }
+
+    Ok(())
+}
+
+fn launcher_full_url(ctx: &Context) -> Result<Option<String>> {
+    ctx.working_on("Getting latest launcher release url.");
+    gh_latest_release_dl_url(
+        &ctx.config.aoe2.gh_launcher_user,
+        &ctx.config.aoe2.gh_launcher_repo,
+        &["_full_", "win_x86-64"],
+    )
+}

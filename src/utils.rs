@@ -1,4 +1,5 @@
 use anyhow::{Result, bail};
+use serde_json::Value;
 use sevenz_rust2::ArchiveReader;
 use std::collections::HashMap;
 use std::io::{Cursor, Read};
@@ -41,4 +42,49 @@ pub fn desktop_dir() -> Result<PathBuf> {
         bail!("Missing desktop dir.");
     };
     Ok(desktop_dir)
+}
+
+pub fn gh_latest_release_dl_url(
+    gh_user: &str,
+    gh_repo: &str,
+    search: &[&str],
+) -> Result<Option<String>> {
+    let url = format!("https://api.github.com/repos/{gh_user}/{gh_repo}/releases/latest",);
+
+    // Ask the api for the latest release download
+    let client = reqwest::blocking::Client::new();
+    let json = client
+        .get(url)
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/20100101 Firefox/143.0",
+        )
+        .send()?
+        .text()?;
+    let json: Value = serde_json::from_str(&json)?;
+
+    let Some(assets) = json.get("assets") else {
+        bail!("Unexpected response from github: expected assets field.");
+    };
+    let Some(assets) = assets.as_array() else {
+        bail!("Expected github assets to be an array, but it was not.");
+    };
+
+    for asset in assets {
+        let Some(name) = asset.get("name").and_then(|n| n.as_str()) else {
+            continue;
+        };
+
+        if !search.iter().all(|s| name.contains(s)) {
+            continue;
+        }
+
+        let Some(url) = asset.get("browser_download_url").and_then(|u| u.as_str()) else {
+            continue;
+        };
+
+        return Ok(Some(url.to_string()));
+    }
+
+    Ok(None)
 }
