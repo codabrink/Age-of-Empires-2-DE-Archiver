@@ -1,0 +1,9 @@
+
+
+[goldberg]
+download_url = "https://github.com/Detanup01/gbe_fork/releases/latest/download/emu-win-release.7z"
+
+[aoe2]
+steam_folder = "AoE2DE"
+gh_user = "luskaner"
+gh_repo = "ageLANServerLauncherCompanion"
