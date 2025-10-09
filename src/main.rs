@@ -43,7 +43,9 @@ impl Context {
     }
 
     pub fn working_on(&self, msg: impl ToString) {
-        let _ = self.tx.send(AppState::Working(msg.to_string()));
+        let msg = msg.to_string();
+        println!("{msg}");
+        let _ = self.tx.send(AppState::Working(msg));
     }
 }
 
@@ -73,7 +75,7 @@ fn draw_main(app: &mut App, ui: &mut Ui) {
             start_export(app);
         }
         if ui.button("Apply Goldberg Emulator").clicked() {
-            goldberg::apply(&app.context());
+            goldberg::apply(app.context());
         }
 
         if ui.button("Install companion").clicked() {
@@ -110,7 +112,9 @@ fn main() -> Result<()> {
         update_rx,
     };
 
-    eframe::run_native("Aoe2 DE", options, Box::new(|_cc| Ok(Box::new(app))));
+    if let Err(err) = eframe::run_native("Aoe2 DE", options, Box::new(|_cc| Ok(Box::new(app)))) {
+        println!("{err:?}");
+    };
 
     Ok(())
 }
@@ -127,8 +131,7 @@ fn start_export(app: &mut App) {
 }
 
 fn export(ctx: Context) -> Result<()> {
-    ctx.tx
-        .send(AppState::Working("Copying AoE2 to new folder.".to_string()))?;
+    ctx.working_on("Copying AoE2 to new folder");
 
     let outdir = ctx.outdir()?;
     let source_aoe2_dir = steam_aoe2_path(&ctx)?;
@@ -137,13 +140,15 @@ fn export(ctx: Context) -> Result<()> {
     let _ = std::fs::create_dir_all(&outdir);
 
     let dir_size = get_size(&source_aoe2_dir)?;
-    println!("Copying from {source_aoe2_dir:?} ({dir_size} bytes)");
+    ctx.working_on(format!(
+        "Copying from {source_aoe2_dir:?} ({dir_size} bytes)"
+    ));
 
     let copy_options = CopyOptions::new();
     let from_paths = vec![source_aoe2_dir];
     copy_items(&from_paths, &outdir, &copy_options)?;
 
-    println!("Done copying.");
+    ctx.working_on("Done copying.");
 
     Ok(())
 }

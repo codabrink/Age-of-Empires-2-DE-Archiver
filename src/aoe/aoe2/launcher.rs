@@ -5,7 +5,7 @@ use crate::{
 };
 use anyhow::{Result, bail};
 use serde_json::Value;
-use std::fs;
+use std::fs::{self, read_to_string};
 
 pub fn install_launcher(ctx: Context) -> Result<()> {
     let Some(launcher_url) = launcher_full_url(&ctx)? else {
@@ -32,6 +32,24 @@ pub fn install_launcher(ctx: Context) -> Result<()> {
         }
         fs::write(outpath, file)?;
     }
+
+    Ok(())
+}
+
+fn patch_launcher_config(ctx: &Context) -> Result<()> {
+    // Set the executable directory.
+    let outdir = ctx.outdir()?;
+    ctx.working_on("Patching launcher config.");
+    let aoe2_config_path = outdir
+        .join("launcher")
+        .join("resources")
+        .join("config.aoe2.toml");
+    let aoe2_config = read_to_string(&aoe2_config_path)?;
+    let aoe2_config = aoe2_config.replace(
+        "Executable = 'auto'",
+        "Executable = '.\\..\\steamclient_loader_x64.exe'",
+    );
+    fs::write(aoe2_config_path, aoe2_config.as_bytes())?;
 
     Ok(())
 }

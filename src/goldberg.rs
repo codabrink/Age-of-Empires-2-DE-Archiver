@@ -19,23 +19,25 @@ const STEAM_SETTINGS_FILES: &[&str] = &[
     "configs.user.ini",
 ];
 
-pub fn apply(ctx: &Context) -> Result<()> {
-    ctx.tx.send(AppState::Working(
-        "Downloading Goldberg Emulator".to_string(),
-    ))?;
+pub fn apply(ctx: Context) {
+    std::thread::spawn(move || apply_internal(ctx));
+}
+
+fn apply_internal(ctx: Context) -> Result<()> {
+    ctx.working_on("Downloading Goldberg Emulator");
 
     let goldberg_archive = {
         let gbe_archive = reqwest::blocking::get(&ctx.config.goldberg.download_url)?
             .bytes()?
             .to_vec();
-        ctx.tx.send(AppState::Working(
-            "Extracting Goldberg Emulator Archive".to_string(),
-        ))?;
+
+        ctx.working_on("Extracting Goldberg Emulator Archive".to_string());
         extract_7z(&gbe_archive)?
     };
 
     let output_dir = desktop_dir()?.join("AoE2");
 
+    ctx.working_on("Patching goldberg into export.");
     for (path, file) in goldberg_archive {
         const EXPERIMENTAL: &str = "release/steamclient_experimental/";
         if !path.starts_with(EXPERIMENTAL) {
@@ -63,6 +65,7 @@ pub fn apply(ctx: &Context) -> Result<()> {
     }
 
     // Configure goldberg for AoE2
+    ctx.working_on("Patching goldberg configs");
     update_cold_client_loader(&output_dir.join("ColdClientLoader.ini"))?;
 
     for settings_file in STEAM_SETTINGS_FILES {
@@ -71,6 +74,8 @@ pub fn apply(ctx: &Context) -> Result<()> {
             output_dir.join("steam_settings").join(settings_file),
         )?;
     }
+
+    ctx.working_on("Done installing goldberg.");
 
     Ok(())
 }

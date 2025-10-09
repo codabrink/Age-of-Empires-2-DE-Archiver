@@ -3,7 +3,6 @@ use crate::{
     utils::{extract_zip, gh_latest_release_dl_url},
 };
 use anyhow::{Result, bail};
-use serde_json::Value;
 use std::fs;
 
 pub fn install_launcher_companion(ctx: Context) -> Result<()> {
@@ -28,6 +27,8 @@ pub fn install_launcher_companion(ctx: Context) -> Result<()> {
         let outpath = outdir.join("dlls").join(name);
         fs::write(outpath, file)?;
     }
+
+    ctx.working_on("Done installing companion.");
 
     Ok(())
 }
