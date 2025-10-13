@@ -1,10 +1,8 @@
 use crate::{
     Context,
-    aoe::aoe2::launcher,
     utils::{extract_zip, gh_latest_release_dl_url},
 };
 use anyhow::{Result, bail};
-use serde_json::Value;
 use std::fs::{self, read_to_string};
 
 pub fn install_launcher(ctx: Context) -> Result<()> {
@@ -22,8 +20,6 @@ pub fn install_launcher(ctx: Context) -> Result<()> {
         let mut outpath = outdir.clone();
         name.split("/").for_each(|c| outpath = outpath.join(c));
 
-        dbg!("outpath", &outpath);
-
         if let Some(parent) = outpath.parent() {
             dbg!("parent", parent);
             if !parent.exists() {
@@ -32,6 +28,8 @@ pub fn install_launcher(ctx: Context) -> Result<()> {
         }
         fs::write(outpath, file)?;
     }
+
+    patch_launcher_config(&ctx)?;
 
     Ok(())
 }
@@ -49,6 +47,7 @@ fn patch_launcher_config(ctx: &Context) -> Result<()> {
         "Executable = 'auto'",
         "Executable = '.\\..\\steamclient_loader_x64.exe'",
     );
+    let aoe2_config = aoe2_config.replace("Path = 'auto'", "Path = '.\\..\\AoE2DE'");
     fs::write(aoe2_config_path, aoe2_config.as_bytes())?;
 
     Ok(())
