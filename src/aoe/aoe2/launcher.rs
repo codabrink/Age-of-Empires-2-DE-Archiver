@@ -17,11 +17,10 @@ pub fn install_launcher(ctx: Context) -> Result<()> {
     ctx.working_on("Extracting launcher.");
 
     for (name, file) in extract_zip(&launcher_zip)? {
-        let mut outpath = outdir.clone();
+        let mut outpath = outdir.to_path_buf();
         name.split("/").for_each(|c| outpath = outpath.join(c));
 
         if let Some(parent) = outpath.parent() {
-            dbg!("parent", parent);
             if !parent.exists() {
                 fs::create_dir_all(parent)?;
             }
@@ -30,6 +29,8 @@ pub fn install_launcher(ctx: Context) -> Result<()> {
     }
 
     patch_launcher_config(&ctx)?;
+
+    ctx.working_on("Done installing launcher.");
 
     Ok(())
 }
@@ -41,7 +42,7 @@ fn patch_launcher_config(ctx: &Context) -> Result<()> {
     let aoe2_config_path = outdir
         .join("launcher")
         .join("resources")
-        .join("config.aoe2.toml");
+        .join("config.age2.toml");
     let aoe2_config = read_to_string(&aoe2_config_path)?;
     let aoe2_config = aoe2_config.replace(
         "Executable = 'auto'",

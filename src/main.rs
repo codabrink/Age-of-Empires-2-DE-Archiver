@@ -9,10 +9,11 @@ use crate::steam::steam_aoe2_path;
 use crate::utils::desktop_dir;
 use anyhow::Result;
 use config::Config;
-use eframe::egui::{self, Ui};
+use eframe::egui::{self, TextEdit, Ui};
 use fs_extra::copy_items;
 use fs_extra::dir::{CopyOptions, get_size};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
@@ -21,25 +22,29 @@ struct App {
     pub update_tx: Sender<AppState>,
     pub update_rx: Receiver<AppState>,
     pub state: AppState,
+    pub outdir: Pin<Box<PathBuf>>,
 }
 
 struct Context {
     pub config: Arc<Config>,
     pub tx: Sender<AppState>,
+    pub outdir: *const PathBuf,
 }
+unsafe impl Send for Context {}
 
 impl App {
     pub fn context(&self) -> Context {
         Context {
             config: self.config.clone(),
             tx: self.update_tx.clone(),
+            outdir: &*self.outdir,
         }
     }
 }
 
 impl Context {
-    fn outdir(&self) -> Result<PathBuf> {
-        Ok(desktop_dir()?.join("AoE2"))
+    fn outdir(&self) -> Result<&Path> {
+        Ok(unsafe { &*self.outdir })
     }
 
     pub fn working_on(&self, msg: impl ToString) {
@@ -70,31 +75,46 @@ impl eframe::App for App {
 
 fn draw_main(app: &mut App, ui: &mut Ui) {
     ui.heading("AoE2");
+
     ui.group(|ui| {
-        if ui.button("Create Package").clicked() {
-            start_export(app);
-        }
-        if ui.button("Apply Goldberg Emulator").clicked() {
-            goldberg::apply(app.context());
-        }
+        ui.label("Outdir");
+        ui.horizontal(|ui| {
+            ui.add(
+                TextEdit::singleline(&mut format!("{}", app.outdir.to_str().unwrap()))
+                    .interactive(false),
+            );
 
-        if ui.button("Install companion").clicked() {
-            if let Err(err) = aoe2::companion::install_launcher_companion(app.context()) {
-                dbg!(err);
-            };
-        }
-
-        if ui.button("Install launcher").clicked() {
-            if let Err(err) = aoe2::launcher::install_launcher(app.context()) {
-                dbg!(err);
+            if ui.button("Select Folder").clicked()
+                && let Some(dir) = rfd::FileDialog::new().pick_folder()
+            {
+                *app.outdir = dir;
             }
-        }
-
-        if let AppState::Working(desc) = &app.state {
-            ui.label(desc);
-            ui.end_row();
-        }
+        });
     });
+
+    if ui.button("Create Package").clicked() {
+        start_export(app);
+    }
+    if ui.button("Apply Goldberg Emulator").clicked() {
+        goldberg::apply(app.context());
+    }
+
+    if ui.button("Install companion").clicked() {
+        if let Err(err) = aoe2::companion::install_launcher_companion(app.context()) {
+            dbg!(err);
+        };
+    }
+
+    if ui.button("Install launcher").clicked() {
+        if let Err(err) = aoe2::launcher::install_launcher(app.context()) {
+            dbg!(err);
+        }
+    }
+
+    if let AppState::Working(desc) = &app.state {
+        ui.label(desc);
+        ui.end_row();
+    }
 }
 
 fn main() -> Result<()> {
@@ -110,6 +130,7 @@ fn main() -> Result<()> {
         state: AppState::Idle,
         update_tx,
         update_rx,
+        outdir: Box::pin(desktop_dir()?.join("AoE2")),
     };
 
     if let Err(err) = eframe::run_native("Aoe2 DE", options, Box::new(|_cc| Ok(Box::new(app)))) {
