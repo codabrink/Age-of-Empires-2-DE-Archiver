@@ -3,7 +3,10 @@ use crate::{
     utils::{extract_zip, gh_latest_release_dl_url},
 };
 use anyhow::{Result, bail};
-use std::fs::{self, read_to_string};
+use std::{
+    fs::{self, read_to_string},
+    process::Command,
+};
 
 pub fn install_launcher(ctx: Context) -> Result<()> {
     let Some(launcher_url) = launcher_full_url(&ctx)? else {
@@ -29,6 +32,12 @@ pub fn install_launcher(ctx: Context) -> Result<()> {
     }
 
     patch_launcher_config(&ctx)?;
+
+    ctx.working_on("Generating certs.");
+
+    let gen_certs_exe = outdir.join("server").join("bin").join("genCert.exe");
+
+    let _ = Command::new(gen_certs_exe).status();
 
     ctx.working_on("Done installing launcher.");
 

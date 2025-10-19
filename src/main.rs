@@ -155,7 +155,7 @@ fn export(ctx: Context) -> Result<()> {
     ctx.working_on("Copying AoE2 to new folder");
 
     let outdir = ctx.outdir()?;
-    let source_aoe2_dir = steam_aoe2_path(&ctx)?;
+    let source_aoe2_dir = steam_aoe2_path()?;
 
     let _ = std::fs::remove_dir_all(&outdir);
     let _ = std::fs::create_dir_all(&outdir);
