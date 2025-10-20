@@ -3,9 +3,9 @@ use crate::{
     utils::{extract_zip, gh_latest_release_dl_url},
 };
 use anyhow::{Result, bail};
-use std::fs;
+use std::{fs, sync::Arc};
 
-pub fn install_launcher_companion(ctx: Context) -> Result<()> {
+pub fn install_launcher_companion(ctx: Arc<Context>) -> Result<()> {
     let Some(companion_full_url) = launcher_companion_full_url(&ctx)? else {
         bail!("Unable to find latest companion release");
     };

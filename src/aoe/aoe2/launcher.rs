@@ -6,9 +6,10 @@ use anyhow::{Result, bail};
 use std::{
     fs::{self, read_to_string},
     process::Command,
+    sync::Arc,
 };
 
-pub fn install_launcher(ctx: Context) -> Result<()> {
+pub fn install_launcher(ctx: Arc<Context>) -> Result<()> {
     let Some(launcher_url) = launcher_full_url(&ctx)? else {
         bail!("Unable to find latest launcher release.");
     };

@@ -1,26 +1,31 @@
 use anyhow::Result;
-use anyhow::bail;
 use std::path::PathBuf;
 use winreg::RegKey;
 use winreg::enums::*;
 
-pub fn steam_aoe2_path() -> Result<PathBuf> {
+pub fn steam_aoe2_path() -> Result<Option<PathBuf>> {
     install_location("Steam App 813780")
 }
 
-pub fn install_location(app_name: &str) -> Result<PathBuf> {
+pub fn install_location(app_name: &str) -> Result<Option<PathBuf>> {
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
 
     // Try the most common location first (64-bit systems)
-    const ROOT: &str = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\";
-    let mut registry_path = ROOT.to_string();
-    registry_path.push_str(app_name);
+    const ROOTS: &[&str] = &[
+        "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\",
+        "SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\",
+    ];
 
-    if let Ok(key) = hklm.open_subkey(registry_path) {
-        if let Ok(install_path) = key.get_value::<String, _>("InstallLocation") {
-            return Ok(PathBuf::from(install_path));
+    for root in ROOTS {
+        let mut registry_path = root.to_string();
+        registry_path.push_str(app_name);
+
+        if let Ok(key) = hklm.open_subkey(registry_path) {
+            if let Ok(install_path) = key.get_value::<String, _>("InstallLocation") {
+                return Ok(Some(PathBuf::from(install_path)));
+            }
         }
     }
 
-    bail!("Unable to find install location in registry")
+    Ok(None)
 }

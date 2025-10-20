@@ -1,9 +1,9 @@
 use crate::{
-    AppState, Context,
+    AppUpdate, Context,
     utils::{desktop_dir, extract_7z},
 };
 use anyhow::Result;
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 const FILES: &[&str] = &[
     "steamclient.dll",
@@ -19,11 +19,11 @@ const STEAM_SETTINGS_FILES: &[&str] = &[
     "configs.user.ini",
 ];
 
-pub fn apply(ctx: Context) {
-    std::thread::spawn(move || apply_internal(ctx));
+pub fn apply(ctx: Arc<Context>) {
+    std::thread::spawn(move || apply_internal(&ctx));
 }
 
-fn apply_internal(ctx: Context) -> Result<()> {
+fn apply_internal(ctx: &Context) -> Result<()> {
     ctx.working_on("Downloading Goldberg Emulator");
 
     let goldberg_archive = {
