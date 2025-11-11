@@ -1,9 +1,13 @@
 use crate::{
-    AppUpdate, Context,
+    Context,
     utils::{desktop_dir, extract_7z},
 };
 use anyhow::Result;
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::{Arc, LazyLock},
+};
 
 const FILES: &[&str] = &[
     "steamclient.dll",
@@ -12,12 +16,28 @@ const FILES: &[&str] = &[
     "steamclient_loader_x64.exe",
 ];
 const SUBDIRS: &[&str] = &["dlls", "steam_settings", "saves"];
-const STEAM_SETTINGS_FILES: &[&str] = &[
-    "supported_languages.txt",
-    "achievements.json",
-    "configs.app.ini",
-    "configs.user.ini",
+
+const STEAM_SETTINGS_FILES_SLICE: &[(&str, &str)] = &[
+    (
+        "supported_languages.txt",
+        include_str!("../assets/supported_languages.txt"),
+    ),
+    (
+        "achievements.json",
+        include_str!("../assets/achievements.json"),
+    ),
+    ("configs.app.ini", include_str!("../assets/configs.app.ini")),
+    (
+        "configs.user.ini",
+        include_str!("../assets/configs.user.ini"),
+    ),
 ];
+static STEAM_SETTINGS_FILES: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+    STEAM_SETTINGS_FILES_SLICE
+        .iter()
+        .map(|(name, content)| (name.to_string(), content.to_string()))
+        .collect()
+});
 
 pub fn apply(ctx: Arc<Context>) {
     std::thread::spawn(move || apply_internal(&ctx));
@@ -68,11 +88,14 @@ fn apply_internal(ctx: &Context) -> Result<()> {
     ctx.working_on("Patching goldberg configs");
     update_cold_client_loader(&output_dir.join("ColdClientLoader.ini"))?;
 
-    for settings_file in STEAM_SETTINGS_FILES {
-        std::fs::copy(
-            Path::new("assets").join(settings_file),
-            output_dir.join("steam_settings").join(settings_file),
-        )?;
+    for (filename, default_file) in &*STEAM_SETTINGS_FILES {
+        let src_path = PathBuf::from("assets").join(filename);
+        let dest_path = output_dir.join("steam_settings").join(filename);
+        if std::fs::exists(&src_path)? {
+            std::fs::copy(src_path, dest_path)?;
+        } else {
+            std::fs::write(dest_path, default_file)?;
+        }
     }
 
     ctx.working_on("Done installing goldberg.");

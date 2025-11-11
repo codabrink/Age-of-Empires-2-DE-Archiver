@@ -19,6 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread::sleep;
 use std::time::Duration;
+use tracing::info;
 
 struct App {
     initial_frame: bool,
@@ -132,10 +133,13 @@ fn draw_main(app: &mut App, ui: &mut Ui) {
     }
 
     let source_dir = (&*app.source_dir).as_ref().map(|sd| sd as *const PathBuf);
-    folder_selection(ui, "AoE2 DE Source", source_dir, |dir| {
+    folder_selection(ui, "AoE2 DE Source Dir", source_dir, |dir| {
+        info!("Selected AoE2 DE Source directory: {}", dir.display());
         *app.source_dir = Some(dir);
     });
-    folder_selection(ui, "Destination", Some(&*app.outdir), |dir| {
+
+    folder_selection(ui, "Destination Dir", Some(&*app.outdir), |dir| {
+        info!("Selected destination directory: {}", dir.display());
         *app.outdir = dir
     });
 
@@ -169,6 +173,8 @@ fn draw_main(app: &mut App, ui: &mut Ui) {
 }
 
 fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder {
             // resizable: Some(false),
