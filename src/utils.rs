@@ -4,6 +4,8 @@ use sevenz_rust2::ArchiveReader;
 use std::collections::HashMap;
 use std::io::{Cursor, Read};
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use zip::ZipArchive;
 
 pub fn extract_7z(archive: &[u8]) -> Result<HashMap<String, Vec<u8>>> {
@@ -87,4 +89,37 @@ pub fn gh_latest_release_dl_url(
     }
 
     Ok(None)
+}
+
+pub struct Busy {
+    busy: Arc<AtomicBool>,
+}
+pub struct BusyGuard {
+    busy: Arc<AtomicBool>,
+}
+impl Drop for BusyGuard {
+    fn drop(&mut self) {
+        self.busy.store(false, Ordering::SeqCst);
+    }
+}
+
+impl Busy {
+    pub fn new() -> Self {
+        Self {
+            busy: Arc::default(),
+        }
+    }
+
+    pub fn is_busy(&self) -> bool {
+        self.busy.load(Ordering::Relaxed)
+    }
+
+    pub fn lock(&self) -> Result<BusyGuard> {
+        if self.busy.swap(true, Ordering::SeqCst) {
+            bail!("Already busy.");
+        }
+        Ok(BusyGuard {
+            busy: self.busy.clone(),
+        })
+    }
 }

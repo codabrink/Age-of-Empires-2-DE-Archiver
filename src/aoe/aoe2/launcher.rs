@@ -9,7 +9,18 @@ use std::{
     sync::Arc,
 };
 
-pub fn install_launcher(ctx: Arc<Context>) -> Result<()> {
+pub fn spawn_install_launcher(ctx: Arc<Context>) -> Result<()> {
+    let busy = ctx.busy.lock();
+
+    std::thread::spawn(move || {
+        let _busy = busy;
+        install_launcher(ctx);
+    });
+
+    Ok(())
+}
+
+fn install_launcher(ctx: Arc<Context>) -> Result<()> {
     let Some(launcher_url) = launcher_full_url(&ctx)? else {
         bail!("Unable to find latest launcher release.");
     };

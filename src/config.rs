@@ -2,6 +2,8 @@ use anyhow::Result;
 use serde::Deserialize;
 use std::fs::read_to_string;
 
+const DEFAULT_CONFIG: &str = include_str!("../config.toml");
+
 #[derive(Deserialize)]
 pub struct Config {
     pub goldberg: Goldberg,
@@ -10,7 +12,11 @@ pub struct Config {
 
 impl Config {
     pub fn load() -> Result<Self> {
-        let config_str = read_to_string("config.toml")?;
+        let config_str = if std::fs::exists("config.toml")? {
+            read_to_string("config.toml")?
+        } else {
+            DEFAULT_CONFIG.to_string()
+        };
         Ok(toml::from_str(&config_str)?)
     }
 }

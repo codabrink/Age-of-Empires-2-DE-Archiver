@@ -5,7 +5,18 @@ use crate::{
 use anyhow::{Result, bail};
 use std::{fs, sync::Arc};
 
-pub fn install_launcher_companion(ctx: Arc<Context>) -> Result<()> {
+pub fn spawn_install_launcher_companion(ctx: Arc<Context>) -> Result<()> {
+    let busy = ctx.busy.lock()?;
+
+    std::thread::spawn(move || {
+        let _busy = busy;
+        install_launcher_companion(ctx);
+    });
+
+    Ok(())
+}
+
+fn install_launcher_companion(ctx: Arc<Context>) -> Result<()> {
     let Some(companion_full_url) = launcher_companion_full_url(&ctx)? else {
         bail!("Unable to find latest companion release");
     };

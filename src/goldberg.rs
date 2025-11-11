@@ -6,8 +6,10 @@ use anyhow::Result;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, atomic::Ordering},
 };
+use tracing::error;
+use tracing::info;
 
 const FILES: &[&str] = &[
     "steamclient.dll",
@@ -39,17 +41,24 @@ static STEAM_SETTINGS_FILES: LazyLock<HashMap<String, String>> = LazyLock::new(|
         .collect()
 });
 
-pub fn apply(ctx: Arc<Context>) {
-    std::thread::spawn(move || apply_internal(&ctx));
+pub fn spawn_apply(ctx: Arc<Context>) -> Result<()> {
+    let busy = ctx.busy.lock()?;
+    std::thread::spawn(move || {
+        let _busy = busy;
+        if let Err(err) = apply(&ctx) {
+            error!("{err:?}");
+        };
+    });
+    Ok(())
 }
 
-fn apply_internal(ctx: &Context) -> Result<()> {
+fn apply(ctx: &Context) -> Result<()> {
     ctx.working_on("Downloading Goldberg Emulator");
 
     let goldberg_archive = {
-        let gbe_archive = reqwest::blocking::get(&ctx.config.goldberg.download_url)?
-            .bytes()?
-            .to_vec();
+        let dl_url = &ctx.config.goldberg.download_url;
+        info!("Downloading goldberg. {dl_url}",);
+        let gbe_archive = reqwest::blocking::get(dl_url)?.bytes()?.to_vec();
 
         ctx.working_on("Extracting Goldberg Emulator Archive".to_string());
         extract_7z(&gbe_archive)?

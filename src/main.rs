@@ -1,3 +1,5 @@
+// #![windows_subsystem = "windows"]
+
 mod aoe;
 mod config;
 mod goldberg;
@@ -6,7 +8,7 @@ mod utils;
 
 use crate::aoe::aoe2;
 use crate::steam::steam_aoe2_path;
-use crate::utils::desktop_dir;
+use crate::utils::{Busy, desktop_dir};
 use anyhow::{Result, bail};
 use config::Config;
 use eframe::egui::{self, Button, ProgressBar, TextEdit, Ui, ViewportCommand};
@@ -14,9 +16,9 @@ use fs_extra::copy_items;
 use fs_extra::dir::{CopyOptions, get_size};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
 use tracing::info;
@@ -27,7 +29,7 @@ struct App {
     pub update_tx: Sender<AppUpdate>,
     pub update_rx: Receiver<AppUpdate>,
     pub state: Option<String>,
-    pub progress: Option<f32>,
+    pub progress: Option<(String, f32)>,
     pub source_dir: Pin<Box<Option<PathBuf>>>,
     pub outdir: Pin<Box<PathBuf>>,
 }
@@ -37,6 +39,7 @@ struct Context {
     pub tx: Sender<AppUpdate>,
     pub source_dir: Option<*const PathBuf>,
     pub outdir: *const PathBuf,
+    pub busy: Busy,
 }
 unsafe impl Send for Context {}
 unsafe impl Sync for Context {}
@@ -48,6 +51,7 @@ impl App {
             tx: self.update_tx.clone(),
             outdir: &*self.outdir,
             source_dir: (*self.source_dir).as_ref().map(|sd| &*sd as *const PathBuf),
+            busy: Busy::new(),
         })
     }
 }
@@ -69,7 +73,7 @@ enum AppUpdate {
     #[default]
     Idle,
     Working(String),
-    Progress(Option<f32>),
+    Progress(Option<(String, f32)>),
 }
 
 impl eframe::App for App {
@@ -77,7 +81,7 @@ impl eframe::App for App {
         while let Ok(state) = self.update_rx.try_recv() {
             match state {
                 AppUpdate::Working(state) => self.state = Some(state),
-                AppUpdate::Progress(pct) => self.progress = pct,
+                AppUpdate::Progress(progress) => self.progress = progress,
                 _ => {}
             }
         }
@@ -107,7 +111,7 @@ where
     unsafe {
         let mut text_val = val
             .map(|v| (*v).to_str().unwrap_or_default().to_string())
-            .unwrap();
+            .unwrap_or_default();
         ui.group(|ui| {
             ui.label(label);
             ui.add(TextEdit::singleline(&mut text_val).interactive(false));
@@ -127,11 +131,6 @@ where
 fn draw_main(app: &mut App, ui: &mut Ui) {
     ui.heading("AoE2");
 
-    if let Some(progress) = app.progress {
-        let progress_bar = ProgressBar::new(progress);
-        ui.add(progress_bar);
-    }
-
     let source_dir = (&*app.source_dir).as_ref().map(|sd| sd as *const PathBuf);
     folder_selection(ui, "AoE2 DE Source Dir", source_dir, |dir| {
         info!("Selected AoE2 DE Source directory: {}", dir.display());
@@ -143,25 +142,35 @@ fn draw_main(app: &mut App, ui: &mut Ui) {
         *app.outdir = dir
     });
 
-    let btn_export = Button::new("Create Package");
-    if ui
-        .add_enabled(app.source_dir.is_some(), btn_export)
-        .clicked()
-    {
-        start_export(app);
-    }
-    if ui.button("Apply Goldberg Emulator").clicked() {
-        goldberg::apply(app.context());
+    if let Some((desc, pct)) = &app.progress {
+        let progress_bar = ProgressBar::new(*pct).text(desc);
+        ui.add(progress_bar);
     }
 
-    if ui.button("Install companion").clicked() {
-        if let Err(err) = aoe2::companion::install_launcher_companion(app.context()) {
+    let busy = app.context().busy.is_busy();
+    let btn_export = Button::new("1. Copy game folder");
+    if ui
+        .add_enabled(app.source_dir.is_some() && !busy, btn_export)
+        .clicked()
+    {
+        spawn_copy_game_folder(app);
+    }
+
+    let btn_apply_goldberg = Button::new("2. Apply Goldberg Emulator");
+    if ui.add_enabled(!busy, btn_apply_goldberg).clicked() {
+        goldberg::spawn_apply(app.context());
+    }
+
+    let btn_install_companion = Button::new("3. Install companion");
+    if ui.add_enabled(!busy, btn_install_companion).clicked() {
+        if let Err(err) = aoe2::companion::spawn_install_launcher_companion(app.context()) {
             dbg!(err);
         };
     }
 
-    if ui.button("Install launcher").clicked() {
-        if let Err(err) = aoe2::launcher::install_launcher(app.context()) {
+    let btn_install_launcher = Button::new("4. Install launcher");
+    if ui.add_enabled(!busy, btn_install_launcher).clicked() {
+        if let Err(err) = aoe2::launcher::spawn_install_launcher(app.context()) {
             dbg!(err);
         }
     }
@@ -173,7 +182,10 @@ fn draw_main(app: &mut App, ui: &mut Ui) {
 }
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_target(false)
+        .init();
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder {
@@ -203,20 +215,23 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn start_export(app: &mut App) {
-    println!("Starting export.");
+fn spawn_copy_game_folder(app: &mut App) -> Result<()> {
+    let busy = app.context().busy.lock()?;
 
     std::thread::spawn({
         let ctx = app.context();
         move || {
-            if let Err(err) = export(ctx) {
+            let _busy = busy;
+            if let Err(err) = copy_game_folder(ctx.clone()) {
                 // handle
             }
         }
     });
+
+    Ok(())
 }
 
-fn export(ctx: Arc<Context>) -> Result<()> {
+fn copy_game_folder(ctx: Arc<Context>) -> Result<()> {
     ctx.working_on("Copying AoE2 to new folder");
 
     let outdir = ctx.outdir()?;
@@ -248,7 +263,10 @@ fn export(ctx: Arc<Context>) -> Result<()> {
 
                 dbg!(pct_complete);
 
-                let _ = ctx.tx.send(AppUpdate::Progress(Some(pct_complete)));
+                let _ = ctx.tx.send(AppUpdate::Progress(Some((
+                    "Copying game folder...".to_string(),
+                    pct_complete,
+                ))));
 
                 sleep(Duration::from_secs(1));
             }
