@@ -183,14 +183,16 @@ fn folder_selection(
             }
         });
 
-        let path_guard = dir_path.lock().unwrap();
-        let mut text_val = path_guard
+        // Read the current value fresh each frame
+        let current_path_text = dir_path
+            .lock()
+            .unwrap()
             .as_ref()
             .map(|p| p.to_str().unwrap_or_default().to_string())
             .unwrap_or_default();
-        drop(path_guard);
 
         ui.horizontal(|ui| {
+            let mut text_val = current_path_text.clone();
             let text_widget = TextEdit::singleline(&mut text_val).interactive(false);
             ui.add_sized([ui.available_width() - 120.0, 20.0], text_widget);
 
@@ -201,15 +203,28 @@ fn folder_selection(
                     dialog = dialog.set_directory(current_path);
                 }
                 if let Some(new_dir) = dialog.pick_folder() {
+                    info!("User selected directory: {}", new_dir.display());
                     let mut valid = true;
+                    let mut error_msg = None;
                     if let Some(validate_fn) = validation {
-                        if let Err(_) = validate_fn(&new_dir) {
+                        if let Err(e) = validate_fn(&new_dir) {
                             valid = false;
+                            error_msg = Some(format!("{}", e));
+                            info!("Validation failed: {}", e);
                         }
                     }
                     if valid {
-                        info!("Selected directory: {}", new_dir.display());
-                        *dir_path.lock().unwrap() = Some(new_dir);
+                        info!("Updating source directory to: {}", new_dir.display());
+                        *dir_path.lock().unwrap() = Some(new_dir.clone());
+                        info!("Source directory updated successfully");
+                        // Force UI update
+                        ui.ctx().request_repaint();
+                    } else if let Some(msg) = error_msg {
+                        rfd::MessageDialog::new()
+                            .set_title("Invalid Directory")
+                            .set_description(&msg)
+                            .set_buttons(rfd::MessageButtons::Ok)
+                            .show();
                     }
                 }
             }
@@ -241,14 +256,15 @@ fn folder_selection_required(
             }
         });
 
-        let mut text_val = dir_path
-            .lock()
-            .unwrap()
-            .to_str()
-            .unwrap_or_default()
-            .to_string();
-
         ui.horizontal(|ui| {
+            // Read the current value fresh each frame
+            let mut text_val = dir_path
+                .lock()
+                .unwrap()
+                .to_str()
+                .unwrap_or_default()
+                .to_string();
+
             let text_widget = TextEdit::singleline(&mut text_val).interactive(false);
             ui.add_sized([ui.available_width() - 120.0, 20.0], text_widget);
 
