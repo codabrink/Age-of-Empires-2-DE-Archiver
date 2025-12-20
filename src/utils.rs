@@ -16,7 +16,7 @@ pub fn extract_7z(archive: &[u8]) -> Result<HashMap<String, Vec<u8>>> {
 
     archive.for_each_entries(|entry, reader| {
         let mut content = vec![];
-        reader.read_to_end(&mut content);
+        let _ = reader.read_to_end(&mut content);
         files.insert(entry.name.clone(), content);
         Ok(true)
     })?;

@@ -393,19 +393,6 @@ fn draw_main(app: &mut App, ui: &mut Ui) {
     );
     ui.add_space(10.0);
 
-    // Open destination folder button
-    ui.horizontal(|ui| {
-        if ui.button("📂 Open Destination Folder").clicked() {
-            let outdir = app.outdir.lock().unwrap().clone();
-            if let Some(parent) = outdir.parent() {
-                if parent.exists() {
-                    let _ = open::that(parent);
-                }
-            }
-        }
-    });
-    ui.add_space(10.0);
-
     ui.separator();
     ui.add_space(10.0);
 
