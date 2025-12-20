@@ -1,12 +1,9 @@
-use crate::{
-    Context,
-    utils::{desktop_dir, extract_7z},
-};
+use crate::{Context, utils::extract_7z};
 use anyhow::Result;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, LazyLock, atomic::Ordering},
+    sync::{Arc, LazyLock},
 };
 use tracing::error;
 use tracing::info;
@@ -45,14 +42,24 @@ pub fn spawn_apply(ctx: Arc<Context>) -> Result<()> {
     let busy = ctx.busy.lock()?;
     std::thread::spawn(move || {
         let _busy = busy;
-        if let Err(err) = apply(&ctx) {
-            error!("{err:?}");
-        };
+        ctx.set_step_status(1, crate::StepStatus::InProgress);
+        match apply_goldberg(ctx.clone()) {
+            Ok(_) => {
+                ctx.set_step_status(1, crate::StepStatus::Completed);
+                ctx.working_on("Goldberg emulator applied successfully");
+            }
+            Err(err) => {
+                let err_msg = format!("{:#}", err);
+                ctx.set_step_status(1, crate::StepStatus::Failed(err_msg.clone()));
+                ctx.send_error(format!("Goldberg installation failed: {}", err_msg));
+                error!("{err:?}");
+            }
+        }
     });
     Ok(())
 }
 
-fn apply(ctx: &Context) -> Result<()> {
+pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {
     ctx.working_on("Downloading Goldberg Emulator");
 
     let goldberg_archive = {
@@ -131,6 +138,7 @@ fn update_cold_client_loader(ini_path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn latest_release(ctx: &Context) -> Result<HashMap<String, Vec<u8>>> {
     let archive = reqwest::blocking::get(&ctx.config.goldberg.download_url)?.bytes()?;
     extract_7z(&archive.to_vec())

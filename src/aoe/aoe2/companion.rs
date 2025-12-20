@@ -10,15 +10,25 @@ pub fn spawn_install_launcher_companion(ctx: Arc<Context>) -> Result<()> {
 
     std::thread::spawn(move || {
         let _busy = busy;
-        if let Err(err) = install_launcher_companion(ctx) {
-            tracing::error!("{err:?}");
-        };
+        ctx.set_step_status(2, crate::StepStatus::InProgress);
+        match install_launcher_companion(ctx.clone()) {
+            Ok(_) => {
+                ctx.set_step_status(2, crate::StepStatus::Completed);
+                ctx.working_on("Companion installed successfully");
+            }
+            Err(err) => {
+                let err_msg = format!("{:#}", err);
+                ctx.set_step_status(2, crate::StepStatus::Failed(err_msg.clone()));
+                ctx.send_error(format!("Companion installation failed: {}", err_msg));
+                tracing::error!("{err:?}");
+            }
+        }
     });
 
     Ok(())
 }
 
-fn install_launcher_companion(ctx: Arc<Context>) -> Result<()> {
+pub fn install_launcher_companion(ctx: Arc<Context>) -> Result<()> {
     let Some(companion_full_url) = launcher_companion_full_url(&ctx)? else {
         bail!("Unable to find latest companion release");
     };

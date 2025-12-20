@@ -14,13 +14,24 @@ pub fn spawn_install_launcher(ctx: Arc<Context>) -> Result<()> {
 
     std::thread::spawn(move || {
         let _busy = busy;
-        install_launcher(ctx);
+        ctx.set_step_status(3, crate::StepStatus::InProgress);
+        match install_launcher(ctx.clone()) {
+            Ok(_) => {
+                ctx.set_step_status(3, crate::StepStatus::Completed);
+                ctx.working_on("Launcher installed successfully");
+            }
+            Err(err) => {
+                let err_msg = format!("{:#}", err);
+                ctx.set_step_status(3, crate::StepStatus::Failed(err_msg.clone()));
+                ctx.send_error(format!("Launcher installation failed: {}", err_msg));
+            }
+        }
     });
 
     Ok(())
 }
 
-fn install_launcher(ctx: Arc<Context>) -> Result<()> {
+pub fn install_launcher(ctx: Arc<Context>) -> Result<()> {
     let Some(launcher_url) = launcher_full_url(&ctx)? else {
         bail!("Unable to find latest launcher release.");
     };
