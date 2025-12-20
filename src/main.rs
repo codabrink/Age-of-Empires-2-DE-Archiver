@@ -92,40 +92,6 @@ impl App {
             self.logs.remove(0);
         }
     }
-
-    fn load_saved_paths(&mut self) -> Result<()> {
-        if let Ok(saved) = std::fs::read_to_string("last_paths.json") {
-            if let Ok(paths) = serde_json::from_str::<SavedPaths>(&saved) {
-                if let Some(src) = paths.source_dir {
-                    if src.exists() {
-                        *self.source_dir.lock().unwrap() = Some(src);
-                    }
-                }
-                if let Some(dst) = paths.dest_dir {
-                    if dst.parent().map(|p| p.exists()).unwrap_or(false) {
-                        *self.outdir.lock().unwrap() = dst;
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn save_paths(&self) -> Result<()> {
-        let paths = SavedPaths {
-            source_dir: self.source_dir.lock().unwrap().clone(),
-            dest_dir: Some(self.outdir.lock().unwrap().clone()),
-        };
-        let json = serde_json::to_string_pretty(&paths)?;
-        std::fs::write("last_paths.json", json)?;
-        Ok(())
-    }
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
-struct SavedPaths {
-    source_dir: Option<PathBuf>,
-    dest_dir: Option<PathBuf>,
 }
 
 impl Context {
@@ -463,8 +429,6 @@ fn draw_main(app: &mut App, ui: &mut Ui) {
     ) {
         if let Err(e) = spawn_copy_game_folder(app) {
             app.error = Some(format!("Failed to start copy: {}", e));
-        } else {
-            let _ = app.save_paths();
         }
     }
     ui.add_space(5.0);
@@ -527,8 +491,6 @@ fn draw_main(app: &mut App, ui: &mut Ui) {
         {
             if let Err(e) = spawn_run_all_steps(app) {
                 app.error = Some(format!("Failed to start: {}", e));
-            } else {
-                let _ = app.save_paths();
             }
         }
     });
@@ -588,7 +550,7 @@ fn main() -> Result<()> {
     let config = Config::load()?;
     let (update_tx, update_rx) = channel();
 
-    let mut app = App {
+    let app = App {
         config: Arc::new(config),
         state: None,
         error: None,
@@ -607,9 +569,6 @@ fn main() -> Result<()> {
         logs: Vec::new(),
         disk_space_info: None,
     };
-
-    // Load saved paths
-    let _ = app.load_saved_paths();
 
     if let Err(err) = eframe::run_native(
         "AoE2 DE Archiver",
