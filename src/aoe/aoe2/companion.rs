@@ -10,7 +10,9 @@ pub fn spawn_install_launcher_companion(ctx: Arc<Context>) -> Result<()> {
 
     std::thread::spawn(move || {
         let _busy = busy;
-        install_launcher_companion(ctx);
+        if let Err(err) = install_launcher_companion(ctx) {
+            tracing::error!("{err:?}");
+        };
     });
 
     Ok(())

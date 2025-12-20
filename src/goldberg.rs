@@ -64,7 +64,7 @@ fn apply(ctx: &Context) -> Result<()> {
         extract_7z(&gbe_archive)?
     };
 
-    let output_dir = desktop_dir()?.join("AoE2");
+    let output_dir = ctx.outdir()?;
 
     ctx.working_on("Patching goldberg into export.");
     for (path, file) in goldberg_archive {
