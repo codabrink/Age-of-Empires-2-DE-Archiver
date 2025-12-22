@@ -1,4 +1,4 @@
-// #![windows_subsystem = "windows"]
+#![windows_subsystem = "windows"]
 
 mod aoe;
 mod config;
@@ -21,6 +21,8 @@ use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
 use tracing::info;
+use tracing_subscriber::Layer;
+use tracing_subscriber::layer::SubscriberExt;
 
 #[derive(Debug, Clone, PartialEq)]
 enum StepStatus {
@@ -60,6 +62,7 @@ struct App {
     pub source_dir: Arc<Mutex<Option<PathBuf>>>,
     pub outdir: Arc<Mutex<PathBuf>>,
     pub step_status: Arc<Mutex<[StepStatus; 4]>>,
+    pub busy: Busy,
     pub show_logs: bool,
     pub logs: Vec<String>,
     pub disk_space_info: Option<(u64, u64)>, // (required, available)
@@ -82,7 +85,7 @@ impl App {
             outdir: self.outdir.clone(),
             source_dir: self.source_dir.clone(),
             step_status: self.step_status.clone(),
-            busy: Busy::new(),
+            busy: self.busy.clone(),
         })
     }
 
@@ -115,6 +118,7 @@ impl Context {
                 steps[step] = status;
             }
         }
+
         let _ = self.tx.send(AppUpdate::StepStatusChanged);
     }
 
@@ -132,6 +136,7 @@ enum AppUpdate {
     Error(String),
     StepStatusChanged,
     DiskSpaceInfo(u64, u64),
+    Log(String),
 }
 
 impl eframe::App for App {
@@ -154,6 +159,9 @@ impl eframe::App for App {
                 }
                 AppUpdate::StepStatusChanged => {
                     // Force UI update
+                }
+                AppUpdate::Log(log) => {
+                    self.add_log(log);
                 }
                 _ => {}
             }
@@ -536,22 +544,99 @@ fn draw_main(app: &mut App, ui: &mut Ui) {
     }
 }
 
+// Custom tracing layer that sends logs to the UI
+struct UiLayer {
+    tx: Sender<AppUpdate>,
+}
+
+impl<S> Layer<S> for UiLayer
+where
+    S: tracing::Subscriber,
+{
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        use tracing::field::Visit;
+
+        struct MessageVisitor {
+            message: String,
+        }
+
+        impl Visit for MessageVisitor {
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                if field.name() == "message" {
+                    self.message = format!("{:?}", value);
+                    // Remove surrounding quotes from debug format
+                    if self.message.starts_with('"') && self.message.ends_with('"') {
+                        self.message = self.message[1..self.message.len() - 1].to_string();
+                    }
+                }
+            }
+        }
+
+        let mut visitor = MessageVisitor {
+            message: String::new(),
+        };
+        event.record(&mut visitor);
+
+        if !visitor.message.is_empty() {
+            let level = event.metadata().level();
+            let log_msg = format!("[{}] {}", level, visitor.message);
+            let _ = self.tx.send(AppUpdate::Log(log_msg));
+        }
+    }
+}
+
 fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .with_target(false)
-        .init();
-
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([700.0, 600.0])
-            .with_min_inner_size([600.0, 500.0])
-            .with_resizable(true),
-        ..Default::default()
-    };
-
     let config = Config::load()?;
     let (update_tx, update_rx) = channel();
+
+    // Set up tracing to pipe logs to the UI
+    let ui_layer = UiLayer {
+        tx: update_tx.clone(),
+    };
+
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_target(false)
+        .finish()
+        .with(ui_layer);
+
+    tracing::subscriber::set_global_default(subscriber).expect("Failed to set tracing subscriber");
+
+    // Load icon from assets
+    let icon_data = include_bytes!("../assets/aoe2.ico");
+    let icon = match image::load_from_memory(icon_data) {
+        Ok(img) => {
+            let rgba = img.to_rgba8();
+            let (width, height) = rgba.dimensions();
+            Some(egui::IconData {
+                rgba: rgba.into_raw(),
+                width,
+                height,
+            })
+        }
+        Err(e) => {
+            eprintln!("Failed to load icon: {}", e);
+            None
+        }
+    };
+
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([700.0, 600.0])
+        .with_min_inner_size([600.0, 500.0])
+        .with_resizable(true);
+
+    if let Some(icon) = icon {
+        viewport = viewport.with_icon(icon);
+    }
+
+    let options = eframe::NativeOptions {
+        viewport,
+        ..Default::default()
+    };
 
     let app = App {
         config: Arc::new(config),
@@ -568,6 +653,7 @@ fn main() -> Result<()> {
             StepStatus::NotStarted,
             StepStatus::NotStarted,
         ])),
+        busy: Busy::new(),
         show_logs: false,
         logs: Vec::new(),
         disk_space_info: None,

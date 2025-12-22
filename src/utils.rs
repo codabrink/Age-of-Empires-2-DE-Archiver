@@ -91,6 +91,7 @@ pub fn gh_latest_release_dl_url(
     Ok(None)
 }
 
+#[derive(Clone)]
 pub struct Busy {
     busy: Arc<AtomicBool>,
 }

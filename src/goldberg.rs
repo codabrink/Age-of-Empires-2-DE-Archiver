@@ -1,5 +1,10 @@
 use crate::{Context, utils::extract_7z};
-use anyhow::Result;
+use aes_gcm::{
+    Aes256Gcm, KeyInit,
+    aead::{Aead, array::Array},
+};
+use anyhow::{Result, anyhow};
+use common::KEY;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -64,45 +69,98 @@ pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {
 
     let goldberg_archive = {
         let dl_url = &ctx.config.goldberg.download_url;
-        info!("Downloading goldberg. {dl_url}",);
+        info!("Downloading goldberg from {}", dl_url);
         let gbe_archive = reqwest::blocking::get(dl_url)?.bytes()?.to_vec();
 
-        ctx.working_on("Extracting Goldberg Emulator Archive".to_string());
-        extract_7z(&gbe_archive)?
+        ctx.working_on("Extracting Goldberg Emulator Archive");
+        let archive = extract_7z(&gbe_archive)?;
+        info!("Extracted {} files from archive", archive.len());
+        for path in archive.keys() {
+            info!("  Archive contains: {}", path);
+        }
+        archive
     };
 
     let output_dir = ctx.outdir()?;
+    info!("Output directory: {}", output_dir.display());
 
-    ctx.working_on("Patching goldberg into export.");
-    for (path, file) in goldberg_archive {
+    ctx.working_on("Patching goldberg into export");
+    for (path, mut file) in goldberg_archive {
         const EXPERIMENTAL: &str = "release/steamclient_experimental/";
         if !path.starts_with(EXPERIMENTAL) {
             continue;
         }
-        let path = path.replace(EXPERIMENTAL, "");
+        let original_path = path.replace(EXPERIMENTAL, "");
+        let path_lower = original_path.to_lowercase();
 
-        if !FILES.contains(&&*path.to_lowercase()) {
+        if !FILES.contains(&&*path_lower) {
             continue;
         }
 
-        let path = output_dir.join(path.replace(EXPERIMENTAL, ""));
+        info!("Processing file: {}", original_path);
 
-        if let Some(parent) = path.parent() {
+        // Determine the output filename, preserving case for non-encrypted files
+        let output_filename = if path_lower == "steamclient_loader_x64.exe" {
+            info!("Encrypting steamclient_loader_x64.exe");
+            let key = Array::try_from(&KEY[..32]).expect("Key is always 32 bytes");
+            let cipher = Aes256Gcm::new(&key);
+            let nonce = Array::try_from([0; 12]).expect("Nonce should always work");
+            file = cipher.encrypt(&nonce, &*file).expect("Encryption failure");
+            "steamclient_loader_x64.encrypted".to_string()
+        } else {
+            original_path
+        };
+
+        let file_path = output_dir.join(&output_filename);
+        info!("Writing file to: {}", file_path.display());
+
+        if let Some(parent) = file_path.parent() {
             if !parent.exists() {
-                let _ = std::fs::create_dir_all(parent);
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    anyhow!("Failed to create directory {}: {}", parent.display(), e)
+                })?;
             }
         }
 
-        let _ = std::fs::write(&path, file);
+        std::fs::write(&file_path, file)
+            .map_err(|e| anyhow!("Failed to write file {}: {}", file_path.display(), e))?;
+        info!("Successfully wrote: {}", file_path.display());
     }
 
     for subdir in SUBDIRS {
-        let _ = std::fs::create_dir_all(output_dir.join(subdir));
+        let subdir_path = output_dir.join(subdir);
+        info!("Creating subdirectory: {}", subdir_path.display());
+        std::fs::create_dir_all(&subdir_path).map_err(|e| {
+            anyhow!(
+                "Failed to create directory {}: {}",
+                subdir_path.display(),
+                e
+            )
+        })?;
     }
 
     // Configure goldberg for AoE2
     ctx.working_on("Patching goldberg configs");
-    update_cold_client_loader(&output_dir.join("ColdClientLoader.ini"))?;
+
+    // Find the ini file case-insensitively
+    let ini_path = std::fs::read_dir(&output_dir)?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.eq_ignore_ascii_case("coldclientloader.ini"))
+                .unwrap_or(false)
+        })
+        .ok_or_else(|| {
+            anyhow!(
+                "ColdClientLoader.ini not found in {}. The file may not have been extracted from the archive.",
+                output_dir.display()
+            )
+        })?;
+
+    info!("Found ini file at: {}", ini_path.display());
+    update_cold_client_loader(&ini_path)?;
 
     for (filename, default_file) in &*STEAM_SETTINGS_FILES {
         let src_path = PathBuf::from("assets").join(filename);
@@ -114,7 +172,10 @@ pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {
         }
     }
 
-    ctx.working_on("Done installing goldberg.");
+    let launcher = include_bytes!("../target/release-lto/launch.exe");
+    std::fs::write(output_dir.join("launcher.exe"), launcher)?;
+
+    ctx.working_on("Done installing goldberg");
 
     Ok(())
 }
@@ -122,18 +183,19 @@ pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {
 fn update_cold_client_loader(ini_path: &Path) -> Result<()> {
     use ini::Ini;
 
-    let mut conf = Ini::load_from_file(ini_path)?;
+    info!("Loading ini file from: {}", ini_path.display());
+    let mut conf = Ini::load_from_file(ini_path)
+        .map_err(|e| anyhow!("Failed to load {}: {}", ini_path.display(), e))?;
 
     conf.with_section(Some("SteamClient"))
-        .set(
-            "Exe",
-            Path::new("Aoe2DE").join("AoE2DE_s.exe").to_string_lossy(),
-        )
+        .set("Exe", r#"AoE2DE\AoE2DE_s.exe"#)
         .set("AppId", "813780");
     conf.with_section(Some("Injection"))
         .set("DllsToInjectFolder", "dlls");
 
-    conf.write_to_file(ini_path)?;
+    info!("Writing updated ini file to: {}", ini_path.display());
+    conf.write_to_file(ini_path)
+        .map_err(|e| anyhow!("Failed to write {}: {}", ini_path.display(), e))?;
 
     Ok(())
 }
