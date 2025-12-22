@@ -3,9 +3,7 @@ use serde_json::Value;
 use sevenz_rust2::ArchiveReader;
 use std::collections::HashMap;
 use std::io::{Cursor, Read};
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::{Path, PathBuf};
 use zip::ZipArchive;
 
 pub fn extract_7z(archive: &[u8]) -> Result<HashMap<String, Vec<u8>>> {
@@ -44,6 +42,23 @@ pub fn desktop_dir() -> Result<PathBuf> {
         bail!("Missing desktop dir.");
     };
     Ok(desktop_dir)
+}
+
+pub fn validate_aoe2_source(path: &Path) -> Result<()> {
+    if !path.exists() {
+        bail!("Directory does not exist");
+    }
+    if !path.is_dir() {
+        bail!("Path is not a directory");
+    }
+
+    // Check for AoE2DE executable
+    let exe_path = path.join("AoE2DE_s.exe");
+    if !exe_path.exists() {
+        bail!("This doesn't appear to be an AoE2 DE directory (AoE2DE_s.exe not found)");
+    }
+
+    Ok(())
 }
 
 pub fn gh_latest_release_dl_url(
@@ -89,38 +104,4 @@ pub fn gh_latest_release_dl_url(
     }
 
     Ok(None)
-}
-
-#[derive(Clone)]
-pub struct Busy {
-    busy: Arc<AtomicBool>,
-}
-pub struct BusyGuard {
-    busy: Arc<AtomicBool>,
-}
-impl Drop for BusyGuard {
-    fn drop(&mut self) {
-        self.busy.store(false, Ordering::SeqCst);
-    }
-}
-
-impl Busy {
-    pub fn new() -> Self {
-        Self {
-            busy: Arc::default(),
-        }
-    }
-
-    pub fn is_busy(&self) -> bool {
-        self.busy.load(Ordering::Relaxed)
-    }
-
-    pub fn lock(&self) -> Result<BusyGuard> {
-        if self.busy.swap(true, Ordering::SeqCst) {
-            bail!("Already busy.");
-        }
-        Ok(BusyGuard {
-            busy: self.busy.clone(),
-        })
-    }
 }

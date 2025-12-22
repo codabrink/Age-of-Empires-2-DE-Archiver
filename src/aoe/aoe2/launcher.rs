@@ -1,5 +1,6 @@
 use crate::{
     Context,
+    ctx::{StepStatus, Task},
     utils::{extract_zip, gh_latest_release_dl_url},
 };
 use anyhow::{Result, bail};
@@ -8,22 +9,23 @@ use std::{
     process::Command,
     sync::Arc,
 };
+use tracing::{error, info};
 
 pub fn spawn_install_launcher(ctx: Arc<Context>) -> Result<()> {
-    let busy = ctx.busy.lock();
+    let guard = ctx.set_task(Task::Launcher)?;
 
     std::thread::spawn(move || {
-        let _busy = busy;
-        ctx.set_step_status(3, crate::StepStatus::InProgress);
+        let _guard = guard;
+        ctx.set_step_status(3, StepStatus::InProgress);
         match install_launcher(ctx.clone()) {
             Ok(_) => {
-                ctx.set_step_status(3, crate::StepStatus::Completed);
-                ctx.working_on("Launcher installed successfully");
+                ctx.set_step_status(3, StepStatus::Completed);
+                info!("Launcher installed successfully");
             }
             Err(err) => {
                 let err_msg = format!("{:#}", err);
-                ctx.set_step_status(3, crate::StepStatus::Failed(err_msg.clone()));
-                ctx.send_error(format!("Launcher installation failed: {}", err_msg));
+                ctx.set_step_status(3, StepStatus::Failed(err_msg.clone()));
+                error!("Launcher installation failed: {err_msg}");
             }
         }
     });
@@ -35,12 +37,12 @@ pub fn install_launcher(ctx: Arc<Context>) -> Result<()> {
     let Some(launcher_url) = launcher_full_url(&ctx)? else {
         bail!("Unable to find latest launcher release.");
     };
-    ctx.working_on("Downloading launcher.");
+    info!("Downloading launcher.");
 
     let launcher_zip = reqwest::blocking::get(launcher_url)?.bytes()?.to_vec();
     let outdir = ctx.outdir()?;
 
-    ctx.working_on("Extracting launcher.");
+    info!("Extracting launcher.");
 
     for (name, file) in extract_zip(&launcher_zip)? {
         let mut outpath = outdir.to_path_buf();
@@ -56,13 +58,13 @@ pub fn install_launcher(ctx: Arc<Context>) -> Result<()> {
 
     patch_launcher_config(&ctx)?;
 
-    ctx.working_on("Generating certs.");
+    info!("Generating certs.");
 
     let gen_certs_exe = outdir.join("server").join("bin").join("genCert.exe");
 
     let _ = Command::new(gen_certs_exe).status();
 
-    ctx.working_on("Done installing launcher.");
+    info!("Done installing launcher.");
 
     Ok(())
 }
@@ -70,7 +72,7 @@ pub fn install_launcher(ctx: Arc<Context>) -> Result<()> {
 fn patch_launcher_config(ctx: &Context) -> Result<()> {
     // Set the executable directory.
     let outdir = ctx.outdir()?;
-    ctx.working_on("Patching launcher config.");
+    info!("Patching launcher config.");
     let aoe2_config_path = outdir
         .join("launcher")
         .join("resources")
@@ -81,14 +83,17 @@ fn patch_launcher_config(ctx: &Context) -> Result<()> {
         r#"Executable = "../steamclient_loader_x64.exe""#,
     );
     let aoe2_config = aoe2_config.replace("Path = 'auto'", r#"Path = "../AoE2DE""#);
-    let aoe2_config = aoe2_config.replace("ExecutableArgs = []", r#"ExecutableArgs = ['--overrideHosts="../dlls/ageLANServerLauncherCompanion_AgeFakeHost_1.0.0.0.dll"']"#);
+    let aoe2_config = aoe2_config.replace(
+        "ExecutableArgs = []",
+        r#"ExecutableArgs = ['--overrideHosts="{HostFilePath}"']"#,
+    );
     fs::write(aoe2_config_path, aoe2_config.as_bytes())?;
 
     Ok(())
 }
 
 fn launcher_full_url(ctx: &Context) -> Result<Option<String>> {
-    ctx.working_on("Getting latest launcher release url.");
+    info!("Getting latest launcher release url.");
     gh_latest_release_dl_url(
         &ctx.config.aoe2.gh_launcher_user,
         &ctx.config.aoe2.gh_launcher_repo,

@@ -1,4 +1,4 @@
-use crate::{Context, utils::extract_7z};
+use crate::{Context, ctx::Task, utils::extract_7z};
 use aes_gcm::{
     Aes256Gcm, KeyInit,
     aead::{Aead, array::Array},
@@ -10,8 +10,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, LazyLock},
 };
-use tracing::error;
-use tracing::info;
+use tracing::{error, info};
 
 const FILES: &[&str] = &[
     "steamclient.dll",
@@ -44,20 +43,20 @@ static STEAM_SETTINGS_FILES: LazyLock<HashMap<String, String>> = LazyLock::new(|
 });
 
 pub fn spawn_apply(ctx: Arc<Context>) -> Result<()> {
-    let busy = ctx.busy.lock()?;
+    let guard = ctx.set_task(Task::Goldberg)?;
+
     std::thread::spawn(move || {
-        let _busy = busy;
+        let _guard = guard;
         ctx.set_step_status(1, crate::StepStatus::InProgress);
         match apply_goldberg(ctx.clone()) {
             Ok(_) => {
                 ctx.set_step_status(1, crate::StepStatus::Completed);
-                ctx.working_on("Goldberg emulator applied successfully");
+                info!("Goldberg emulator applied successfully");
             }
             Err(err) => {
                 let err_msg = format!("{:#}", err);
                 ctx.set_step_status(1, crate::StepStatus::Failed(err_msg.clone()));
-                ctx.send_error(format!("Goldberg installation failed: {}", err_msg));
-                error!("{err:?}");
+                error!("Goldberg installation failed: {err_msg}");
             }
         }
     });
@@ -65,14 +64,14 @@ pub fn spawn_apply(ctx: Arc<Context>) -> Result<()> {
 }
 
 pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {
-    ctx.working_on("Downloading Goldberg Emulator");
+    info!("Downloading Goldberg Emulator");
 
     let goldberg_archive = {
         let dl_url = &ctx.config.goldberg.download_url;
         info!("Downloading goldberg from {}", dl_url);
         let gbe_archive = reqwest::blocking::get(dl_url)?.bytes()?.to_vec();
 
-        ctx.working_on("Extracting Goldberg Emulator Archive");
+        info!("Extracting Goldberg Emulator Archive");
         let archive = extract_7z(&gbe_archive)?;
         info!("Extracted {} files from archive", archive.len());
         for path in archive.keys() {
@@ -84,7 +83,7 @@ pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {
     let output_dir = ctx.outdir()?;
     info!("Output directory: {}", output_dir.display());
 
-    ctx.working_on("Patching goldberg into export");
+    info!("Patching goldberg into export");
     for (path, mut file) in goldberg_archive {
         const EXPERIMENTAL: &str = "release/steamclient_experimental/";
         if !path.starts_with(EXPERIMENTAL) {
@@ -140,7 +139,7 @@ pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {
     }
 
     // Configure goldberg for AoE2
-    ctx.working_on("Patching goldberg configs");
+    info!("Patching goldberg configs");
 
     // Find the ini file case-insensitively
     let ini_path = std::fs::read_dir(&output_dir)?
@@ -175,7 +174,7 @@ pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {
     let launcher = include_bytes!("../target/release-lto/launch.exe");
     std::fs::write(output_dir.join("launcher.exe"), launcher)?;
 
-    ctx.working_on("Done installing goldberg");
+    info!("Done installing goldberg");
 
     Ok(())
 }
