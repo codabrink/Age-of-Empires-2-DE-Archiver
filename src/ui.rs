@@ -50,9 +50,10 @@ fn draw_main(app: &mut App, ui: &mut Ui) -> Result<()> {
 
     folder_selection(
         ui,
+        &app.ctx,
         "AoE2 DE Source Directory",
         "Select the folder containing your Age of Empires II: Definitive Edition installation",
-        &mut app.ctx.sourcedir_mut(),
+        app.ctx.sourcedir(),
         Some(validate_aoe2_source),
     );
     ui.add_space(8.0);
@@ -62,7 +63,7 @@ fn draw_main(app: &mut App, ui: &mut Ui) -> Result<()> {
         &app.ctx,
         "Destination Directory",
         "Select where you want to create the archived copy of the game",
-        &mut app.ctx.outdir_mut(),
+        app.ctx.outdir(),
     );
     ui.add_space(10.0);
 
@@ -189,9 +190,10 @@ impl eframe::App for App {
 
 fn folder_selection(
     ui: &mut Ui,
+    ctx: &Context,
     label: &str,
     tooltip: &str,
-    dir_path: &mut Option<PathBuf>,
+    dir_path: Option<PathBuf>,
     validation: Option<fn(&Path) -> Result<()>>,
 ) {
     ui.group(|ui| {
@@ -233,7 +235,7 @@ fn folder_selection(
                     }
                     if valid {
                         info!("Updating source directory to: {}", new_dir.display());
-                        *dir_path = Some(new_dir.clone());
+                        ctx.set_outdir(new_dir);
                         info!("Source directory updated successfully");
                         // Force UI update
                         ui.ctx().request_repaint();
@@ -264,7 +266,7 @@ fn folder_selection_required(
     ctx: &Context,
     label: &str,
     tooltip: &str,
-    dir_path: &mut PathBuf,
+    dir_path: PathBuf,
 ) {
     ui.group(|ui| {
         ui.set_min_width(ui.available_width());

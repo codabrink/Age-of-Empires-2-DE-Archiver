@@ -5,7 +5,7 @@ use fs_extra::dir::get_size;
 use fs2::available_space;
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex, MutexGuard, mpsc::Sender},
+    sync::{Arc, Mutex, mpsc::Sender},
 };
 
 pub struct Context {
@@ -42,16 +42,8 @@ impl Context {
         self.sourcedir.lock().unwrap().clone()
     }
 
-    pub fn sourcedir_mut<'a>(&'a self) -> MutexGuard<'a, Option<PathBuf>> {
-        self.sourcedir.lock().unwrap()
-    }
-
     pub fn outdir(&self) -> PathBuf {
         self.outdir.lock().unwrap().clone()
-    }
-
-    pub fn outdir_mut<'a>(&'a self) -> MutexGuard<'a, PathBuf> {
-        self.outdir.lock().unwrap()
     }
 
     pub fn set_sourcedir(&self, path: PathBuf) {
@@ -60,7 +52,7 @@ impl Context {
             let _ = self.tx.send(AppUpdate::SourceSize(dir_size));
         }
 
-        *self.sourcedir_mut() = Some(path);
+        *self.sourcedir.lock().unwrap() = Some(path);
     }
 
     pub fn set_outdir(&self, path: PathBuf) {
@@ -72,7 +64,7 @@ impl Context {
             }
         }
 
-        *self.outdir_mut() = path;
+        *self.outdir.lock().unwrap() = path;
     }
 
     pub fn set_step_status(&self, step: usize, status: StepStatus) {
