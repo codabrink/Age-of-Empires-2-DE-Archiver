@@ -12,13 +12,13 @@ use crate::aoe::aoe2;
 use crate::ctx::{Context, StepStatus, Task};
 use crate::ui::UiLayer;
 use crate::utils::validate_aoe2_source;
-use anyhow::{Context as AnyhowContext, Result};
+use anyhow::{Context as AnyhowContext, Result, bail};
 use eframe::egui;
 use fs_extra::copy_items;
 use fs_extra::dir::{CopyOptions, get_size};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, channel};
+use std::sync::{Arc, mpsc};
 use std::thread::sleep;
 use std::time::Duration;
 use tracing::{error, info};
@@ -125,15 +125,16 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn spawn_copy_game_folder(app: &mut App) -> Result<()> {
-    let guard = app.ctx.set_task(Task::Copy)?;
-    let ctx = app.ctx.clone();
+fn spawn_copy_game_folder(ctx: Arc<Context>) -> Result<Receiver<()>> {
+    let guard = ctx.set_task(Task::Copy)?;
+    let ctx = ctx.clone();
+
+    let (tx, rx) = mpsc::sync_channel(0);
 
     // Validate source directory
-    let source = app.ctx.sourcedir();
+    let source = ctx.sourcedir();
     if source.is_none() {
-        error!("No source directory selected");
-        return Ok(());
+        bail!("No source directory selected");
     }
 
     std::thread::spawn({
@@ -145,6 +146,7 @@ fn spawn_copy_game_folder(app: &mut App) -> Result<()> {
                 Ok(_) => {
                     ctx.set_step_status(0, StepStatus::Completed);
                     info!("Copy completed successfully");
+                    tx.send(());
                 }
                 Err(err) => {
                     let err_msg = format!("{:#}", err);
@@ -155,7 +157,7 @@ fn spawn_copy_game_folder(app: &mut App) -> Result<()> {
         }
     });
 
-    Ok(())
+    Ok(rx)
 }
 
 fn copy_game_folder(ctx: Arc<Context>) -> Result<()> {
@@ -219,73 +221,37 @@ fn copy_game_folder(ctx: Arc<Context>) -> Result<()> {
     Ok(())
 }
 
-fn spawn_run_all_steps(app: &mut App) -> Result<()> {
-    let ctx = app.ctx.clone();
+fn run_all_steps(ctx: Arc<Context>) {
     std::thread::spawn({
         move || {
-            // Step 1: Copy
-            ctx.set_step_status(0, StepStatus::InProgress);
-
-            match copy_game_folder(ctx.clone()) {
-                Ok(_) => {
-                    ctx.set_step_status(0, StepStatus::Completed);
-                    info!("Step 1/4 completed: Game files copied");
-                }
-                Err(err) => {
-                    let err_msg = format!("{:#}", err);
-                    ctx.set_step_status(0, StepStatus::Failed(err_msg.clone()));
-                    error!("Step 1 failed: {err_msg}");
-                    return;
-                }
-            }
-
-            // Step 2: Goldberg
-            ctx.set_step_status(1, StepStatus::InProgress);
-            match goldberg::apply_goldberg(ctx.clone()) {
-                Ok(_) => {
-                    ctx.set_step_status(1, StepStatus::Completed);
-                    info!("Step 2/4 completed: Goldberg emulator applied");
-                }
-                Err(err) => {
-                    let err_msg = format!("{:#}", err);
-                    ctx.set_step_status(1, StepStatus::Failed(err_msg.clone()));
-                    error!("Step 2 failed: {err_msg:#}");
-                    return;
-                }
-            }
-
-            // Step 3: Companion
-            ctx.set_step_status(2, StepStatus::InProgress);
-            match aoe2::companion::install_launcher_companion(ctx.clone()) {
-                Ok(_) => {
-                    ctx.set_step_status(2, StepStatus::Completed);
-                    info!("Step 3/4 completed: Companion installed");
-                }
-                Err(err) => {
-                    let err_msg = format!("{:#}", err);
-                    ctx.set_step_status(2, StepStatus::Failed(err_msg.clone()));
-                    error!("Step 3 failed: {err_msg}");
-                    return;
-                }
-            }
-
-            sleep(Duration::from_millis(500));
-
-            // Step 4: Launcher
-            ctx.set_step_status(3, StepStatus::InProgress);
-            match aoe2::launcher::install_launcher(ctx.clone()) {
-                Ok(_) => {
-                    ctx.set_step_status(3, StepStatus::Completed);
-                    info!("All steps completed successfully! ✓");
-                }
-                Err(err) => {
-                    let err_msg = format!("{:#}", err);
-                    ctx.set_step_status(3, StepStatus::Failed(err_msg.clone()));
-                    error!("Step 4 failed: {err_msg}");
-                }
+            if let Err(err) = run_all_steps_inner(ctx) {
+                error!("{err:?}");
             }
         }
     });
+}
+
+fn run_all_steps_inner(ctx: Arc<Context>) -> Result<()> {
+    // Step 1: Copy
+    ctx.set_step_status(0, StepStatus::InProgress);
+    let rx = spawn_copy_game_folder(ctx.clone())?;
+    let _ = rx.recv();
+    info!("Step 1/4 completed: Game files copied");
+
+    // Step 2: Goldberg
+    ctx.set_step_status(1, StepStatus::InProgress);
+    let rx = goldberg::spawn_apply(ctx.clone())?;
+    let _ = rx.recv();
+
+    // Step 3: Companion
+    ctx.set_step_status(2, StepStatus::InProgress);
+    let rx = aoe2::companion::spawn_install_launcher_companion(ctx.clone())?;
+    let _ = rx.recv();
+
+    // Step 4: Launcher
+    ctx.set_step_status(3, StepStatus::InProgress);
+    let rx = aoe2::launcher::spawn_install_launcher(ctx.clone())?;
+    let _ = rx.recv();
 
     Ok(())
 }

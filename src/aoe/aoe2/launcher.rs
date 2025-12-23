@@ -7,13 +7,17 @@ use anyhow::{Result, bail};
 use std::{
     fs::{self, read_to_string},
     process::Command,
-    sync::Arc,
+    sync::{
+        Arc,
+        mpsc::{self, Receiver},
+    },
 };
 use tracing::{error, info};
 
-pub fn spawn_install_launcher(ctx: Arc<Context>) -> Result<()> {
+pub fn spawn_install_launcher(ctx: Arc<Context>) -> Result<Receiver<()>> {
     let guard = ctx.set_task(Task::Launcher)?;
 
+    let (tx, rx) = mpsc::sync_channel(0);
     std::thread::spawn(move || {
         let _guard = guard;
         ctx.set_step_status(3, StepStatus::InProgress);
@@ -21,6 +25,7 @@ pub fn spawn_install_launcher(ctx: Arc<Context>) -> Result<()> {
             Ok(_) => {
                 ctx.set_step_status(3, StepStatus::Completed);
                 info!("Launcher installed successfully");
+                tx.send(());
             }
             Err(err) => {
                 let err_msg = format!("{:#}", err);
@@ -30,7 +35,7 @@ pub fn spawn_install_launcher(ctx: Arc<Context>) -> Result<()> {
         }
     });
 
-    Ok(())
+    Ok(rx)
 }
 
 pub fn install_launcher(ctx: Arc<Context>) -> Result<()> {

@@ -4,12 +4,19 @@ use crate::{
     utils::{extract_zip, gh_latest_release_dl_url},
 };
 use anyhow::{Result, bail};
-use std::{fs, sync::Arc};
+use std::{
+    fs,
+    sync::{
+        Arc,
+        mpsc::{self, Receiver},
+    },
+};
 use tracing::{error, info};
 
-pub fn spawn_install_launcher_companion(ctx: Arc<Context>) -> Result<()> {
+pub fn spawn_install_launcher_companion(ctx: Arc<Context>) -> Result<Receiver<()>> {
     let guard = ctx.set_task(Task::Launcher)?;
 
+    let (tx, rx) = mpsc::sync_channel(0);
     std::thread::spawn(move || {
         let _guard = guard;
         ctx.set_step_status(2, StepStatus::InProgress);
@@ -17,17 +24,17 @@ pub fn spawn_install_launcher_companion(ctx: Arc<Context>) -> Result<()> {
             Ok(_) => {
                 ctx.set_step_status(2, StepStatus::Completed);
                 info!("Companion installed successfully");
+                tx.send(());
             }
             Err(err) => {
                 let err_msg = format!("{:#}", err);
                 ctx.set_step_status(2, StepStatus::Failed(err_msg.clone()));
                 error!("Companion installation failed: {err_msg}");
-                tracing::error!("{err:?}");
             }
         }
     });
 
-    Ok(())
+    Ok(rx)
 }
 
 pub fn install_launcher_companion(ctx: Arc<Context>) -> Result<()> {

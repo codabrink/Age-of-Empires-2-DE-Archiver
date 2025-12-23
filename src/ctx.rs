@@ -25,6 +25,7 @@ impl Context {
             sourcedir: Mutex::default(),
             outdir: Mutex::default(),
             current_task: Mutex::default(),
+
             step_status: Mutex::new([const { StepStatus::NotStarted }; 4]),
         };
 
@@ -115,15 +116,17 @@ pub enum Task {
     Launcher,
 }
 
-pub struct TaskReset(Arc<Context>);
+pub struct TaskReset {
+    ctx: Arc<Context>,
+}
 impl TaskReset {
     pub fn new(ctx: Arc<Context>) -> Self {
-        Self(ctx)
+        Self { ctx }
     }
 }
 impl Drop for TaskReset {
     fn drop(&mut self) {
-        *self.0.current_task.lock().unwrap() = None;
+        *self.ctx.current_task.lock().unwrap() = None;
     }
 }
 

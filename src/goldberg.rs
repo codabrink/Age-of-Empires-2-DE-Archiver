@@ -8,7 +8,10 @@ use common::KEY;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, LazyLock},
+    sync::{
+        Arc, LazyLock,
+        mpsc::{self, Receiver},
+    },
 };
 use tracing::{error, info};
 
@@ -42,8 +45,10 @@ static STEAM_SETTINGS_FILES: LazyLock<HashMap<String, String>> = LazyLock::new(|
         .collect()
 });
 
-pub fn spawn_apply(ctx: Arc<Context>) -> Result<()> {
+pub fn spawn_apply(ctx: Arc<Context>) -> Result<Receiver<()>> {
     let guard = ctx.set_task(Task::Goldberg)?;
+
+    let (tx, rx) = mpsc::sync_channel(0);
 
     std::thread::spawn(move || {
         let _guard = guard;
@@ -52,6 +57,7 @@ pub fn spawn_apply(ctx: Arc<Context>) -> Result<()> {
             Ok(_) => {
                 ctx.set_step_status(1, crate::StepStatus::Completed);
                 info!("Goldberg emulator applied successfully");
+                tx.send(());
             }
             Err(err) => {
                 let err_msg = format!("{:#}", err);
@@ -60,7 +66,8 @@ pub fn spawn_apply(ctx: Arc<Context>) -> Result<()> {
             }
         }
     });
-    Ok(())
+
+    Ok(rx)
 }
 
 pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {

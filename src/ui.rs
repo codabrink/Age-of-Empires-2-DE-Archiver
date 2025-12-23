@@ -1,7 +1,7 @@
 use crate::{
     App, AppUpdate,
     ctx::{Context, StepStatus},
-    spawn_run_all_steps,
+    run_all_steps,
     utils::validate_aoe2_source,
 };
 use anyhow::Result;
@@ -131,9 +131,7 @@ fn draw_main(app: &mut App, ui: &mut Ui) -> Result<()> {
         .on_hover_text("Automatically run all steps in sequence")
         .clicked()
     {
-        if let Err(e) = spawn_run_all_steps(app) {
-            app.error = Some(format!("Failed to start: {}", e));
-        }
+        run_all_steps(app.ctx.clone());
     }
     ui.add_space(10.0);
 
