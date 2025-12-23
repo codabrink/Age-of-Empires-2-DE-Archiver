@@ -84,10 +84,6 @@ impl Context {
 
         let _ = self.tx.send(AppUpdate::StepStatusChanged);
     }
-
-    pub fn current_task(&self) -> Option<Task> {
-        self.current_task.lock().unwrap().clone()
-    }
 }
 
 impl Context {
@@ -143,8 +139,8 @@ impl StepStatus {
         match self {
             StepStatus::NotStarted => "⚪",
             StepStatus::InProgress => "⏳",
-            StepStatus::Completed => "✓",
-            StepStatus::Failed(_) => "✗",
+            StepStatus::Completed => "✅",
+            StepStatus::Failed(_) => "❌",
         }
     }
 

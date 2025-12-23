@@ -14,7 +14,7 @@ use std::{
 use tracing::{error, info};
 
 pub fn spawn_install_launcher_companion(ctx: Arc<Context>) -> Result<Receiver<()>> {
-    let guard = ctx.set_task(Task::Launcher)?;
+    let guard = ctx.set_task(Task::Companion)?;
 
     let (tx, rx) = mpsc::sync_channel(0);
     std::thread::spawn(move || {
@@ -24,7 +24,7 @@ pub fn spawn_install_launcher_companion(ctx: Arc<Context>) -> Result<Receiver<()
             Ok(_) => {
                 ctx.set_step_status(2, StepStatus::Completed);
                 info!("Companion installed successfully");
-                tx.send(());
+                let _ = tx.send(());
             }
             Err(err) => {
                 let err_msg = format!("{:#}", err);

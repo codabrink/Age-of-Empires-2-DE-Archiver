@@ -17,7 +17,7 @@ use eframe::egui;
 use fs_extra::copy_items;
 use fs_extra::dir::{CopyOptions, get_size};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Receiver, channel};
+use std::sync::mpsc::{Receiver, RecvError, channel};
 use std::sync::{Arc, mpsc};
 use std::thread::sleep;
 use std::time::Duration;
@@ -146,7 +146,7 @@ fn spawn_copy_game_folder(ctx: Arc<Context>) -> Result<Receiver<()>> {
                 Ok(_) => {
                     ctx.set_step_status(0, StepStatus::Completed);
                     info!("Copy completed successfully");
-                    tx.send(());
+                    let _ = tx.send(());
                 }
                 Err(err) => {
                     let err_msg = format!("{:#}", err);
@@ -225,6 +225,10 @@ fn run_all_steps(ctx: Arc<Context>) {
     std::thread::spawn({
         move || {
             if let Err(err) = run_all_steps_inner(ctx) {
+                // Don't log recv errors.
+                let Err(err) = err.downcast::<RecvError>() else {
+                    return;
+                };
                 error!("{err:?}");
             }
         }
@@ -235,23 +239,27 @@ fn run_all_steps_inner(ctx: Arc<Context>) -> Result<()> {
     // Step 1: Copy
     ctx.set_step_status(0, StepStatus::InProgress);
     let rx = spawn_copy_game_folder(ctx.clone())?;
-    let _ = rx.recv();
+    rx.recv()?;
     info!("Step 1/4 completed: Game files copied");
 
     // Step 2: Goldberg
     ctx.set_step_status(1, StepStatus::InProgress);
     let rx = goldberg::spawn_apply(ctx.clone())?;
-    let _ = rx.recv();
+    rx.recv()?;
+    info!("Step 2/4 completed: Goldberg installed");
 
     // Step 3: Companion
     ctx.set_step_status(2, StepStatus::InProgress);
     let rx = aoe2::companion::spawn_install_launcher_companion(ctx.clone())?;
-    let _ = rx.recv();
+    rx.recv()?;
+    info!("Step 3/4 completed: Launcher Companion Installed");
 
     // Step 4: Launcher
     ctx.set_step_status(3, StepStatus::InProgress);
     let rx = aoe2::launcher::spawn_install_launcher(ctx.clone())?;
-    let _ = rx.recv();
+
+    rx.recv()?;
+    info!("Step 4/4 completed: Launcher Installed");
 
     Ok(())
 }

@@ -25,7 +25,7 @@ pub fn spawn_install_launcher(ctx: Arc<Context>) -> Result<Receiver<()>> {
             Ok(_) => {
                 ctx.set_step_status(3, StepStatus::Completed);
                 info!("Launcher installed successfully");
-                tx.send(());
+                let _ = tx.send(());
             }
             Err(err) => {
                 let err_msg = format!("{:#}", err);

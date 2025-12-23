@@ -57,7 +57,7 @@ pub fn spawn_apply(ctx: Arc<Context>) -> Result<Receiver<()>> {
             Ok(_) => {
                 ctx.set_step_status(1, crate::StepStatus::Completed);
                 info!("Goldberg emulator applied successfully");
-                tx.send(());
+                let _ = tx.send(());
             }
             Err(err) => {
                 let err_msg = format!("{:#}", err);
