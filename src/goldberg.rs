@@ -80,7 +80,7 @@ pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {
         archive
     };
 
-    let output_dir = ctx.outdir()?;
+    let output_dir = ctx.outdir();
     info!("Output directory: {}", output_dir.display());
 
     info!("Patching goldberg into export");

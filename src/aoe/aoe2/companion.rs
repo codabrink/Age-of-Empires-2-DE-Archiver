@@ -41,7 +41,7 @@ pub fn install_launcher_companion(ctx: Arc<Context>) -> Result<()> {
         .bytes()?
         .to_vec();
 
-    let outdir = ctx.outdir()?;
+    let outdir = ctx.outdir();
     info!("Extracting launcher companion dlls.");
     for (name, file) in extract_zip(&companion)? {
         let lc_name = name.to_lowercase();

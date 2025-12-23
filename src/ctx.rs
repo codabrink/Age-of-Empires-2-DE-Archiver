@@ -1,27 +1,77 @@
-use crate::{AppUpdate, config::Config};
+use crate::{AppUpdate, config::Config, steam::steam_aoe2_path, utils::desktop_dir};
 use anyhow::{Result, bail};
 use eframe::egui::Color32;
+use fs_extra::dir::get_size;
+use fs2::available_space;
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex, mpsc::Sender},
+    sync::{Arc, Mutex, MutexGuard, mpsc::Sender},
 };
 
 pub struct Context {
     pub config: Config,
     pub tx: Sender<AppUpdate>,
-    pub source_dir: Mutex<Option<PathBuf>>,
-    pub outdir: Mutex<PathBuf>,
-    pub current_task: Mutex<Option<Task>>,
+    sourcedir: Mutex<Option<PathBuf>>,
+    outdir: Mutex<PathBuf>,
+    current_task: Mutex<Option<Task>>,
     pub step_status: Mutex<[StepStatus; 4]>,
 }
 
 impl Context {
-    pub fn outdir(&self) -> Result<PathBuf> {
-        Ok(self.outdir.lock().unwrap().clone())
+    pub fn new(tx: Sender<AppUpdate>) -> Result<Self> {
+        let ctx = Self {
+            tx,
+            config: Config::load()?,
+            sourcedir: Mutex::default(),
+            outdir: Mutex::default(),
+            current_task: Mutex::default(),
+            step_status: Mutex::new([const { StepStatus::NotStarted }; 4]),
+        };
+
+        if let Some(source) = steam_aoe2_path()? {
+            ctx.set_sourcedir(source);
+        }
+
+        ctx.set_outdir(desktop_dir()?.join("AoE2"));
+
+        Ok(ctx)
     }
 
-    pub fn source_dir(&self) -> Result<Option<PathBuf>> {
-        Ok(self.source_dir.lock().unwrap().clone())
+    pub fn sourcedir(&self) -> Option<PathBuf> {
+        self.sourcedir.lock().unwrap().clone()
+    }
+
+    pub fn sourcedir_mut<'a>(&'a self) -> MutexGuard<'a, Option<PathBuf>> {
+        self.sourcedir.lock().unwrap()
+    }
+
+    pub fn outdir(&self) -> PathBuf {
+        self.outdir.lock().unwrap().clone()
+    }
+
+    pub fn outdir_mut<'a>(&'a self) -> MutexGuard<'a, PathBuf> {
+        self.outdir.lock().unwrap()
+    }
+
+    pub fn set_sourcedir(&self, path: PathBuf) {
+        // Get sizes and check disk space
+        if let Ok(dir_size) = get_size(&path) {
+            let _ = self.tx.send(AppUpdate::SourceSize(dir_size));
+        }
+
+        *self.sourcedir_mut() = Some(path);
+    }
+
+    pub fn set_outdir(&self, path: PathBuf) {
+        if let Ok(disk_size) = available_space(&path) {
+            let _ = self.tx.send(AppUpdate::DestDriveAvailable(disk_size));
+        } else if let Some(parent) = path.parent() {
+            if let Ok(disk_size) = available_space(&parent) {
+                let _ = self.tx.send(AppUpdate::DestDriveAvailable(disk_size));
+            }
+        }
+
+        *self.outdir_mut() = path;
     }
 
     pub fn set_step_status(&self, step: usize, status: StepStatus) {

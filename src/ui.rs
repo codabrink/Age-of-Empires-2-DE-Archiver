@@ -1,9 +1,14 @@
-use crate::{App, AppUpdate, ctx::StepStatus, spawn_run_all_steps, utils::validate_aoe2_source};
+use crate::{
+    App, AppUpdate,
+    ctx::{Context, StepStatus},
+    spawn_run_all_steps,
+    utils::validate_aoe2_source,
+};
 use anyhow::Result;
 use eframe::egui::{self, Button, Color32, ProgressBar, RichText, TextEdit, Ui};
 use std::{
     path::{Path, PathBuf},
-    sync::{Mutex, mpsc::Sender},
+    sync::mpsc::Sender,
 };
 use tracing::info;
 use tracing_subscriber::Layer;
@@ -11,95 +16,132 @@ use tracing_subscriber::Layer;
 fn draw_main(app: &mut App, ui: &mut Ui) -> Result<()> {
     ui.heading("AoE2 DE Archiver");
     ui.separator();
-    ui.add_space(5.0);
+    ui.add_space(10.0);
 
     // Status banner at the top
     draw_status_banner(ui, app);
 
     // Disk space info
-    if let Some((required, available)) = app.disk_space_info {
-        let required_gb = required as f64 / 1_073_741_824.0;
-        let available_gb = available as f64 / 1_073_741_824.0;
-        let color = if available > required {
-            Color32::from_rgb(0, 200, 0)
-        } else {
-            Color32::from_rgb(220, 0, 0)
-        };
-        ui.horizontal(|ui| {
-            ui.label("Disk Space:");
-            ui.label(
-                RichText::new(format!(
-                    "{:.2} GB required, {:.2} GB available",
-                    required_gb, available_gb
-                ))
-                .color(color),
-            );
-        });
-        ui.add_space(5.0);
-    }
 
-    // Directory selection
+    let required = app.required_space.unwrap_or_default() as f64;
+    let available = app.available_space.unwrap_or_default() as f64;
+    let required_gb = required as f64 / 1_073_741_824.0;
+    let available_gb = available as f64 / 1_073_741_824.0;
+    let color = if available > required {
+        Color32::from_rgb(0, 200, 0)
+    } else {
+        Color32::from_rgb(220, 0, 0)
+    };
+    ui.horizontal(|ui| {
+        ui.label("Disk Space:");
+        ui.label(
+            RichText::new(format!(
+                "{:.2} GB required, {:.2} GB available",
+                required_gb, available_gb
+            ))
+            .color(color),
+        );
+    });
+    ui.add_space(10.0);
+    ui.separator();
+
     ui.label(RichText::new("Configuration").strong().size(16.0));
-    ui.add_space(5.0);
+    ui.add_space(8.0);
 
     folder_selection(
         ui,
         "AoE2 DE Source Directory",
         "Select the folder containing your Age of Empires II: Definitive Edition installation",
-        &app.ctx.source_dir,
+        &mut app.ctx.sourcedir_mut(),
         Some(validate_aoe2_source),
     );
-    ui.add_space(5.0);
+    ui.add_space(8.0);
 
     folder_selection_required(
         ui,
+        &app.ctx,
         "Destination Directory",
         "Select where you want to create the archived copy of the game",
-        &mut app.ctx.outdir.lock().unwrap(),
+        &mut app.ctx.outdir_mut(),
     );
     ui.add_space(10.0);
 
+    // Steps section
     ui.separator();
-    ui.add_space(10.0);
+    ui.label(RichText::new("Steps").strong().size(16.0));
+    ui.add_space(8.0);
 
-    let source_exists = app.ctx.source_dir.lock().unwrap().is_some();
+    ui.horizontal(|ui| {
+        let step_status = app.ctx.step_status.lock().unwrap();
 
-    ui.separator();
+        // Step 1: Copy
+        ui.label(
+            RichText::new(step_status[0].icon())
+                .color(step_status[0].color())
+                .size(18.0),
+        );
+        ui.label("1. Copy");
+        ui.add_space(10.0);
+
+        // Step 2: Goldberg
+        ui.label(
+            RichText::new(step_status[1].icon())
+                .color(step_status[1].color())
+                .size(18.0),
+        );
+        ui.label("2. Goldberg");
+        ui.add_space(10.0);
+
+        // Step 3: Companion
+        ui.label(
+            RichText::new(step_status[2].icon())
+                .color(step_status[2].color())
+                .size(18.0),
+        );
+        ui.label("3. Companion");
+        ui.add_space(10.0);
+
+        // Step 4: Launcher
+        ui.label(
+            RichText::new(step_status[3].icon())
+                .color(step_status[3].color())
+                .size(18.0),
+        );
+        ui.label("4. Launcher");
+    });
     ui.add_space(10.0);
 
     // Run All button
-    ui.horizontal(|ui| {
-        let can_run_all = source_exists
-            && !app.ctx.is_busy()
-            && app
-                .ctx
-                .step_status
-                .lock()
-                .unwrap()
-                .iter()
-                .all(|s| matches!(s, StepStatus::NotStarted));
+    let source_exists = app.ctx.sourcedir().is_some();
+    let can_run_all = source_exists
+        && !app.ctx.is_busy()
+        && app
+            .ctx
+            .step_status
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|s| matches!(s, StepStatus::NotStarted));
 
-        if ui
-            .add_enabled(can_run_all, Button::new("▶ Run All Steps"))
-            .on_hover_text("Automatically run all steps in sequence")
-            .clicked()
-        {
-            if let Err(e) = spawn_run_all_steps(app) {
-                app.error = Some(format!("Failed to start: {}", e));
-            }
+    if ui
+        .add_enabled(
+            can_run_all,
+            Button::new("▶ Run All Steps").min_size([150.0, 30.0].into()),
+        )
+        .on_hover_text("Automatically run all steps in sequence")
+        .clicked()
+    {
+        if let Err(e) = spawn_run_all_steps(app) {
+            app.error = Some(format!("Failed to start: {}", e));
         }
-    });
+    }
     ui.add_space(10.0);
 
     // Logs section
     ui.separator();
-    ui.add_space(5.0);
+    ui.label(RichText::new("Logs").strong().size(16.0));
+    ui.add_space(8.0);
 
-    ui.horizontal(|ui| {
-        ui.label(RichText::new("Logs").strong().size(16.0));
-    });
-
-    ui.add_space(5.0);
     egui::ScrollArea::vertical()
         .max_height(150.0)
         .show(ui, |ui| {
@@ -123,8 +165,11 @@ impl eframe::App for App {
         while let Ok(state) = self.update_rx.try_recv() {
             match state {
                 AppUpdate::Progress(progress) => self.progress = progress,
-                AppUpdate::DiskSpaceInfo(required, available) => {
-                    self.disk_space_info = Some((required, available));
+                AppUpdate::SourceSize(required) => {
+                    self.required_space = Some(required);
+                }
+                AppUpdate::DestDriveAvailable(available) => {
+                    self.available_space = Some(available);
                 }
                 AppUpdate::StepStatusChanged => {
                     // Force UI update
@@ -138,7 +183,7 @@ impl eframe::App for App {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                draw_main(self, ui);
+                draw_main(self, ui).unwrap();
             });
         });
     }
@@ -148,7 +193,7 @@ fn folder_selection(
     ui: &mut Ui,
     label: &str,
     tooltip: &str,
-    dir_path: &Mutex<Option<PathBuf>>,
+    dir_path: &mut Option<PathBuf>,
     validation: Option<fn(&Path) -> Result<()>>,
 ) {
     ui.group(|ui| {
@@ -162,10 +207,8 @@ fn folder_selection(
 
         // Read the current value fresh each frame
         let current_path_text = dir_path
-            .lock()
-            .unwrap()
             .as_ref()
-            .map(|p| p.to_str().unwrap_or_default().to_string())
+            .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
 
         ui.horizontal(|ui| {
@@ -174,7 +217,7 @@ fn folder_selection(
             ui.add_sized([ui.available_width() - 120.0, 20.0], text_widget);
 
             if ui.button("📁 Select Folder").clicked() {
-                let current = dir_path.lock().unwrap().clone();
+                let current = dir_path.clone();
                 let mut dialog = rfd::FileDialog::new();
                 if let Some(current_path) = current {
                     dialog = dialog.set_directory(current_path);
@@ -192,7 +235,7 @@ fn folder_selection(
                     }
                     if valid {
                         info!("Updating source directory to: {}", new_dir.display());
-                        *dir_path.lock().unwrap() = Some(new_dir.clone());
+                        *dir_path = Some(new_dir.clone());
                         info!("Source directory updated successfully");
                         // Force UI update
                         ui.ctx().request_repaint();
@@ -209,7 +252,7 @@ fn folder_selection(
 
         // Show validation warning if present
         if let Some(validate_fn) = validation {
-            if let Some(path) = dir_path.lock().unwrap().as_ref() {
+            if let Some(path) = &dir_path {
                 if let Err(e) = validate_fn(path) {
                     ui.colored_label(Color32::from_rgb(255, 100, 0), format!("⚠ {}", e));
                 }
@@ -218,7 +261,13 @@ fn folder_selection(
     });
 }
 
-fn folder_selection_required(ui: &mut Ui, label: &str, tooltip: &str, dir_path: &mut PathBuf) {
+fn folder_selection_required(
+    ui: &mut Ui,
+    ctx: &Context,
+    label: &str,
+    tooltip: &str,
+    dir_path: &mut PathBuf,
+) {
     ui.group(|ui| {
         ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
@@ -241,48 +290,16 @@ fn folder_selection_required(ui: &mut Ui, label: &str, tooltip: &str, dir_path: 
                 dialog = dialog.set_directory(current);
                 if let Some(new_dir) = dialog.pick_folder() {
                     info!("Selected directory: {}", new_dir.display());
-                    *dir_path = new_dir;
+                    ctx.set_outdir(new_dir);
                 }
             }
         });
     });
 }
 
-fn draw_step_button(
-    ui: &mut Ui,
-    _step_num: usize,
-    label: &str,
-    tooltip: &str,
-    status: &StepStatus,
-    enabled: bool,
-) -> bool {
-    let mut clicked = false;
-    ui.horizontal(|ui| {
-        ui.label(
-            RichText::new(status.icon())
-                .color(status.color())
-                .size(20.0),
-        );
-
-        let button = Button::new(label);
-        let response = ui.add_enabled(enabled, button);
-
-        if !tooltip.is_empty() {
-            response.clone().on_hover_text(tooltip);
-        }
-
-        if response.clicked() {
-            clicked = true;
-        }
-
-        if let StepStatus::Failed(err) = status {
-            ui.label(RichText::new(format!("({})", err)).color(Color32::from_rgb(220, 0, 0)));
-        }
-    });
-    clicked
-}
-
 fn draw_status_banner(ui: &mut Ui, app: &App) {
+    let mut has_banner = false;
+
     if let Some(err) = &app.error {
         ui.horizontal(|ui| {
             ui.label(
@@ -292,19 +309,23 @@ fn draw_status_banner(ui: &mut Ui, app: &App) {
             );
             ui.label(RichText::new(err).color(Color32::from_rgb(220, 0, 0)));
         });
-        ui.add_space(5.0);
+        has_banner = true;
     } else if let Some(state) = &app.state {
         ui.horizontal(|ui| {
             ui.label(RichText::new("⏳").color(Color32::from_rgb(255, 165, 0)));
             ui.label(RichText::new(state).color(Color32::from_rgb(255, 165, 0)));
         });
-        ui.add_space(5.0);
+        has_banner = true;
     }
 
     if let Some((desc, pct)) = &app.progress {
         let progress_bar = ProgressBar::new(*pct).text(desc);
         ui.add_sized([ui.available_width(), 20.0], progress_bar);
-        ui.add_space(5.0);
+        has_banner = true;
+    }
+
+    if has_banner {
+        ui.add_space(10.0);
     }
 }
 

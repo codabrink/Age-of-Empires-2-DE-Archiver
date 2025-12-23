@@ -40,7 +40,7 @@ pub fn install_launcher(ctx: Arc<Context>) -> Result<()> {
     info!("Downloading launcher.");
 
     let launcher_zip = reqwest::blocking::get(launcher_url)?.bytes()?.to_vec();
-    let outdir = ctx.outdir()?;
+    let outdir = ctx.outdir();
 
     info!("Extracting launcher.");
 
@@ -71,7 +71,7 @@ pub fn install_launcher(ctx: Arc<Context>) -> Result<()> {
 
 fn patch_launcher_config(ctx: &Context) -> Result<()> {
     // Set the executable directory.
-    let outdir = ctx.outdir()?;
+    let outdir = ctx.outdir();
     info!("Patching launcher config.");
     let aoe2_config_path = outdir
         .join("launcher")

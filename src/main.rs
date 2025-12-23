@@ -10,17 +10,15 @@ mod utils;
 
 use crate::aoe::aoe2;
 use crate::ctx::{Context, StepStatus, Task};
-use crate::steam::steam_aoe2_path;
 use crate::ui::UiLayer;
-use crate::utils::{desktop_dir, validate_aoe2_source};
+use crate::utils::validate_aoe2_source;
 use anyhow::{Context as AnyhowContext, Result};
-use config::Config;
 use eframe::egui;
 use fs_extra::copy_items;
 use fs_extra::dir::{CopyOptions, get_size};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, channel};
-use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
 use tracing::{error, info};
@@ -32,7 +30,8 @@ struct App {
     pub error: Option<String>,
     pub progress: Option<(String, f32)>,
     pub logs: Vec<String>,
-    pub disk_space_info: Option<(u64, u64)>, // (required, available)
+    pub required_space: Option<u64>,
+    pub available_space: Option<u64>,
     pub ctx: Arc<Context>,
 }
 
@@ -51,12 +50,12 @@ enum AppUpdate {
     Idle,
     Progress(Option<(String, f32)>),
     StepStatusChanged,
-    DiskSpaceInfo(u64, u64),
+    SourceSize(u64),
+    DestDriveAvailable(u64),
     Log(String),
 }
 
 fn main() -> Result<()> {
-    let config = Config::load()?;
     let (update_tx, update_rx) = channel();
 
     // Set up tracing to pipe logs to the UI
@@ -104,23 +103,15 @@ fn main() -> Result<()> {
         ..Default::default()
     };
 
-    let ctx = Context {
-        config,
-        tx: update_tx,
-        outdir: Mutex::new(desktop_dir()?.join("AoE2")),
-        source_dir: Mutex::new(steam_aoe2_path()?),
-        current_task: Mutex::default(),
-        step_status: Mutex::new([const { StepStatus::NotStarted }; 4]),
-    };
-
     let app = App {
         state: None,
         error: None,
         update_rx,
         progress: None,
         logs: Vec::new(),
-        disk_space_info: None,
-        ctx: Arc::new(ctx),
+        required_space: None,
+        available_space: None,
+        ctx: Arc::new(Context::new(update_tx)?),
     };
 
     if let Err(err) = eframe::run_native(
@@ -139,7 +130,7 @@ fn spawn_copy_game_folder(app: &mut App) -> Result<()> {
     let ctx = app.ctx.clone();
 
     // Validate source directory
-    let source = app.ctx.source_dir()?;
+    let source = app.ctx.sourcedir();
     if source.is_none() {
         error!("No source directory selected");
         return Ok(());
@@ -170,9 +161,9 @@ fn spawn_copy_game_folder(app: &mut App) -> Result<()> {
 fn copy_game_folder(ctx: Arc<Context>) -> Result<()> {
     info!("Preparing to copy AoE2 files");
 
-    let outdir = ctx.outdir()?;
+    let outdir = ctx.outdir();
     let source_aoe2_dir = ctx
-        .source_dir()?
+        .sourcedir()
         .ok_or_else(|| anyhow::anyhow!("No source directory"))?;
 
     // Validate source
@@ -180,12 +171,6 @@ fn copy_game_folder(ctx: Arc<Context>) -> Result<()> {
 
     // Get sizes and check disk space
     let dir_size = get_size(&source_aoe2_dir).context("Failed to get source directory size")?;
-
-    // Note: A proper implementation would check actual available disk space using Windows API
-
-    ctx.tx
-        .send(AppUpdate::DiskSpaceInfo(dir_size, dir_size * 2))
-        .ok();
 
     info!(
         "Copying from {} ({:.2} GB)",
