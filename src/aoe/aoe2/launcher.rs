@@ -85,12 +85,13 @@ fn patch_launcher_config(ctx: &Context) -> Result<()> {
     let aoe2_config = read_to_string(&aoe2_config_path)?;
     let aoe2_config = aoe2_config.replace(
         "Executable = 'auto'",
-        r#"Executable = "../steamclient_loader_x64.exe""#,
+        r#"Executable = "../goldberg/steamclient_loader_x64.exe""#,
     );
     let aoe2_config = aoe2_config.replace("Path = 'auto'", r#"Path = "../AoE2DE""#);
     let aoe2_config = aoe2_config.replace(
         "ExecutableArgs = []",
-        r#"ExecutableArgs = ['--overrideHosts="{HostFilePath}"']"#,
+        "ExecutableArgs = []",
+        // r#"ExecutableArgs = ['--overrideHosts="{HostFilePath}"']"#,
     );
     fs::write(aoe2_config_path, aoe2_config.as_bytes())?;
 

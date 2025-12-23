@@ -22,7 +22,6 @@ fn draw_main(app: &mut App, ui: &mut Ui) -> Result<()> {
     draw_status_banner(ui, app);
 
     // Disk space info
-
     let required = app.required_space.unwrap_or_default() as f64;
     let available = app.available_space.unwrap_or_default() as f64;
     let required_gb = required as f64 / 1_073_741_824.0;
@@ -325,7 +324,7 @@ fn draw_status_banner(ui: &mut Ui, app: &App) {
     }
 
     if has_banner {
-        ui.add_space(10.0);
+        ui.add_space(5.0);
     }
 }
 

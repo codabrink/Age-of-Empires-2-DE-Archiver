@@ -45,6 +45,8 @@ static STEAM_SETTINGS_FILES: LazyLock<HashMap<String, String>> = LazyLock::new(|
         .collect()
 });
 
+pub const GOLDBERG_SUBDIR: &str = "goldberg";
+
 pub fn spawn_apply(ctx: Arc<Context>) -> Result<Receiver<()>> {
     let guard = ctx.set_task(Task::Goldberg)?;
 
@@ -87,8 +89,9 @@ pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {
         archive
     };
 
-    let output_dir = ctx.outdir();
-    info!("Output directory: {}", output_dir.display());
+    let goldberg_dir = ctx.outdir().join(GOLDBERG_SUBDIR);
+    std::fs::create_dir_all(&goldberg_dir)?;
+    info!("Output directory: {}", goldberg_dir.display());
 
     info!("Patching goldberg into export");
     for (path, mut file) in goldberg_archive {
@@ -117,7 +120,7 @@ pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {
             original_path
         };
 
-        let file_path = output_dir.join(&output_filename);
+        let file_path = goldberg_dir.join(&output_filename);
         info!("Writing file to: {}", file_path.display());
 
         if let Some(parent) = file_path.parent() {
@@ -134,7 +137,7 @@ pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {
     }
 
     for subdir in SUBDIRS {
-        let subdir_path = output_dir.join(subdir);
+        let subdir_path = goldberg_dir.join(subdir);
         info!("Creating subdirectory: {}", subdir_path.display());
         std::fs::create_dir_all(&subdir_path).map_err(|e| {
             anyhow!(
@@ -149,7 +152,7 @@ pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {
     info!("Patching goldberg configs");
 
     // Find the ini file case-insensitively
-    let ini_path = std::fs::read_dir(&output_dir)?
+    let ini_path = std::fs::read_dir(&goldberg_dir)?
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
         .find(|path| {
@@ -161,7 +164,7 @@ pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {
         .ok_or_else(|| {
             anyhow!(
                 "ColdClientLoader.ini not found in {}. The file may not have been extracted from the archive.",
-                output_dir.display()
+                goldberg_dir.display()
             )
         })?;
 
@@ -170,7 +173,7 @@ pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {
 
     for (filename, default_file) in &*STEAM_SETTINGS_FILES {
         let src_path = PathBuf::from("assets").join(filename);
-        let dest_path = output_dir.join("steam_settings").join(filename);
+        let dest_path = goldberg_dir.join("steam_settings").join(filename);
         if std::fs::exists(&src_path)? {
             std::fs::copy(src_path, dest_path)?;
         } else {
@@ -179,7 +182,7 @@ pub fn apply_goldberg(ctx: Arc<Context>) -> Result<()> {
     }
 
     let launcher = include_bytes!("../target/release-lto/launch.exe");
-    std::fs::write(output_dir.join("launcher.exe"), launcher)?;
+    std::fs::write(ctx.outdir().join("launcher.exe"), launcher)?;
 
     info!("Done installing goldberg");
 
@@ -194,7 +197,7 @@ fn update_cold_client_loader(ini_path: &Path) -> Result<()> {
         .map_err(|e| anyhow!("Failed to load {}: {}", ini_path.display(), e))?;
 
     conf.with_section(Some("SteamClient"))
-        .set("Exe", r#"AoE2DE\AoE2DE_s.exe"#)
+        .set("Exe", r#"..\AoE2DE\AoE2DE_s.exe"#)
         .set("AppId", "813780");
     conf.with_section(Some("Injection"))
         .set("DllsToInjectFolder", "dlls");

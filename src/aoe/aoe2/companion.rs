@@ -1,6 +1,7 @@
 use crate::{
     Context,
     ctx::{StepStatus, Task},
+    goldberg::GOLDBERG_SUBDIR,
     utils::{extract_zip, gh_latest_release_dl_url},
 };
 use anyhow::{Result, bail};
@@ -48,7 +49,7 @@ pub fn install_launcher_companion(ctx: Arc<Context>) -> Result<()> {
         .bytes()?
         .to_vec();
 
-    let outdir = ctx.outdir();
+    let goldberg_dir = ctx.outdir().join(GOLDBERG_SUBDIR);
     info!("Extracting launcher companion dlls.");
     for (name, file) in extract_zip(&companion)? {
         let lc_name = name.to_lowercase();
@@ -56,7 +57,7 @@ pub fn install_launcher_companion(ctx: Arc<Context>) -> Result<()> {
             continue;
         }
 
-        let outpath = outdir.join("dlls").join(name);
+        let outpath = goldberg_dir.join("dlls").join(name);
         fs::write(outpath, file)?;
     }
 

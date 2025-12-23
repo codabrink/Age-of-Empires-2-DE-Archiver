@@ -7,9 +7,9 @@ use std::{
 use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead, aes::cipher::Array};
 use common::KEY;
 
-const ENC_PATH: &str = "steamclient_loader_x64.encrypted";
-const LOADER_PATH: &str = "steamclient_loader_x64.exe";
-const USER_CONFIGS: &str = "steam_settings/configs.user.ini";
+const ENC_PATH: &str = "goldberg/steamclient_loader_x64.encrypted";
+const LOADER_PATH: &str = "goldberg/steamclient_loader_x64.exe";
+const USER_CONFIGS: &str = "goldberg/steam_settings/configs.user.ini";
 
 fn main() {
     let _ = ensure_name();
