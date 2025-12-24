@@ -47,7 +47,7 @@ fn draw_main(app: &mut App, ui: &mut Ui) -> Result<()> {
     ui.label(RichText::new("Configuration").strong().size(16.0));
     ui.add_space(8.0);
 
-    folder_selection(
+    source_folder_selection(
         ui,
         &app.ctx,
         "AoE2 DE Source Directory",
@@ -57,7 +57,7 @@ fn draw_main(app: &mut App, ui: &mut Ui) -> Result<()> {
     );
     ui.add_space(8.0);
 
-    folder_selection_required(
+    outdir_folder_selection(
         ui,
         &app.ctx,
         "Destination Directory",
@@ -187,7 +187,7 @@ impl eframe::App for App {
     }
 }
 
-fn folder_selection(
+fn source_folder_selection(
     ui: &mut Ui,
     ctx: &Context,
     label: &str,
@@ -234,7 +234,7 @@ fn folder_selection(
                     }
                     if valid {
                         info!("Updating source directory to: {}", new_dir.display());
-                        ctx.set_outdir(new_dir);
+                        ctx.set_sourcedir(new_dir);
                         info!("Source directory updated successfully");
                         // Force UI update
                         ui.ctx().request_repaint();
@@ -260,7 +260,7 @@ fn folder_selection(
     });
 }
 
-fn folder_selection_required(
+fn outdir_folder_selection(
     ui: &mut Ui,
     ctx: &Context,
     label: &str,

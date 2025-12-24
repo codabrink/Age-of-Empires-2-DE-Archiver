@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::{
     fs::{read, write},
+    path::Path,
     process::Command,
 };
 
@@ -13,6 +14,15 @@ const USER_CONFIGS: &str = "goldberg/steam_settings/configs.user.ini";
 
 fn main() {
     let _ = ensure_name();
+    let _ = decrypt_launcher();
+
+    Command::new("launcher/start_age2.bat").status().unwrap();
+}
+
+fn decrypt_launcher() -> Result<()> {
+    if Path::new(LOADER_PATH).exists() {
+        return Ok(());
+    }
 
     let key = Array::try_from(&KEY[..32]).expect("Key is 32 bytes");
     let cipher = Aes256Gcm::new(&key);
@@ -23,8 +33,7 @@ fn main() {
         .decrypt(&nonce, &*ciphertext)
         .expect("Decryption failure");
     write(LOADER_PATH, file).expect("Unable to write file: {LOADER_PATH}");
-
-    Command::new("launcher/start_age2.bat").status().unwrap();
+    Ok(())
 }
 
 fn ensure_name() -> Result<()> {
