@@ -1,15 +1,15 @@
 use crate::{
-    Context,
     ctx::{StepStatus, Task},
     utils::{extract_zip, gh_latest_release_dl_url},
+    Context,
 };
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use std::{
     fs::{self, read_to_string},
     process::Command,
     sync::{
-        Arc,
         mpsc::{self, Receiver},
+        Arc,
     },
 };
 use tracing::{error, info};
@@ -103,6 +103,7 @@ fn launcher_full_url(ctx: &Context) -> Result<Option<String>> {
     gh_latest_release_dl_url(
         &ctx.config.aoe2.gh_launcher_user,
         &ctx.config.aoe2.gh_launcher_repo,
+        Some("v1.11.2"),
         &["_full_", "win_x86-64"],
     )
 }

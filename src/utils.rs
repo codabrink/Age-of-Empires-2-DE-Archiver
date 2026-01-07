@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use serde_json::Value;
 use sevenz_rust2::ArchiveReader;
 use std::collections::HashMap;
@@ -64,9 +64,10 @@ pub fn validate_aoe2_source(path: &Path) -> Result<()> {
 pub fn gh_latest_release_dl_url(
     gh_user: &str,
     gh_repo: &str,
+    version: Option<&str>,
     search: &[&str],
 ) -> Result<Option<String>> {
-    let url = format!("https://api.github.com/repos/{gh_user}/{gh_repo}/releases/latest",);
+    let url = format!("https://api.github.com/repos/{gh_user}/{gh_repo}/releases");
 
     // Ask the api for the latest release download
     let client = reqwest::blocking::Client::new();
@@ -80,7 +81,27 @@ pub fn gh_latest_release_dl_url(
         .text()?;
     let json: Value = serde_json::from_str(&json)?;
 
-    let Some(assets) = json.get("assets") else {
+    let Some(releases) = json.as_array() else {
+        bail!("Expected releases json to be an array.");
+    };
+    if releases.is_empty() {
+        bail!("{gh_repo} has no releases.");
+    }
+
+    let release = if let Some(version) = version {
+        let Some(release) = releases.iter().find(|r| {
+            r.get("tag_name")
+                .and_then(|r| r.as_str())
+                .is_some_and(|r| r == version)
+        }) else {
+            return Ok(None);
+        };
+        release
+    } else {
+        releases.iter().nth(0).unwrap()
+    };
+
+    let Some(assets) = release.get("assets") else {
         bail!("Unexpected response from github: expected assets field.");
     };
     let Some(assets) = assets.as_array() else {
@@ -104,4 +125,22 @@ pub fn gh_latest_release_dl_url(
     }
 
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::utils::gh_latest_release_dl_url;
+
+    #[test]
+    fn load_specific_version() {
+        let result = gh_latest_release_dl_url(
+            "luskaner",
+            "ageLANServerLauncherCompanion",
+            Some("v1.2.1.0"),
+            &[],
+        )
+        .unwrap();
+
+        assert_eq!(result.unwrap(), "https://github.com/luskaner/ageLANServerLauncherCompanion/releases/download/v1.2.1.0/ageLANServerLauncherCompanion_Age2FakeOnline_1.0.0.0.zip");
+    }
 }

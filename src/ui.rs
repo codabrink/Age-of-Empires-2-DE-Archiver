@@ -372,3 +372,10 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn select_sourcedir() {}
+}

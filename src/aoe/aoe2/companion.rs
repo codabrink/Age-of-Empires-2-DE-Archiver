@@ -71,6 +71,7 @@ fn launcher_companion_full_url(ctx: &Context) -> Result<Option<String>> {
     gh_latest_release_dl_url(
         &ctx.config.aoe2.gh_companion_user,
         &ctx.config.aoe2.gh_companion_repo,
+        None,
         &["_full_"],
     )
 }
